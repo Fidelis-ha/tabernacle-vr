@@ -90,8 +90,12 @@ interface GameStore {
   settings: AudioSettings;
   restartToken: number;
   resetPosition: { x: number; z: number };
+  moveInput: { x: number; z: number };
+  xrActive: boolean;
   togglePause: () => void;
   setSettings: (settings: AudioSettings) => void;
+  setMoveInput: (input: { x: number; z: number }) => void;
+  setXrActive: (active: boolean) => void;
   restart: () => void;
 }
 
@@ -101,6 +105,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   settings: defaultSettings,
   restartToken: 0,
   resetPosition: { x: 0, z: -8 },
+  moveInput: { x: 0, z: 0 },
+  xrActive: false,
   togglePause: () => {
     const { audioStarted, settings, isPaused } = get();
     if (!audioStarted) {
@@ -110,6 +116,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ isPaused: !isPaused });
   },
   setSettings: (settings) => set({ settings }),
+  setMoveInput: (moveInput) => set({ moveInput }),
+  setXrActive: (xrActive) => set({ xrActive }),
   restart: () => set((s) => ({ restartToken: s.restartToken + 1, isPaused: false })),
 }));
 

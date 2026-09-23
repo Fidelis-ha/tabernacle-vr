@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { XR, XROrigin, useXR, useXRControllerLocomotion, createXRStore } from '@react-three/xr';
 import * as THREE from 'three';
@@ -11,9 +11,150 @@ const store = createXRStore({
   hand: { teleportPointer: true }
 });
 
+// Touch device detection: coarse pointer (phones/tablets) OR any touch support
+function useIsTouchDevice(): boolean {
+  const [isTouch] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    return coarse || (navigator.maxTouchPoints ?? 0) > 0;
+  });
+  return isTouch;
+}
+
+// Sync the XR session state into the DOM-reachable zustand store
+function XRSessionSync() {
+  const session = useXR((s) => s.session);
+  const setXrActive = useGameStore((s) => s.setXrActive);
+  useEffect(() => {
+    setXrActive(!!session);
+    return () => setXrActive(false);
+  }, [session, setXrActive]);
+  return null;
+}
+
+// VR enter button - only rendered when the browser reports immersive-vr support
+function VRButton() {
+  const [supported, setSupported] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const xr = (navigator as Navigator & { xr?: { isSessionSupported(mode: string): Promise<boolean> } }).xr;
+    if (!xr) return;
+    xr.isSessionSupported('immersive-vr')
+      .then((ok) => { if (!cancelled) setSupported(ok); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!supported) return null;
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: '120px', left: '50%', transform: 'translateX(-50%)',
+      zIndex: 100
+    }}>
+      <button
+        onClick={() => store.enterVR()}
+        style={{
+          padding: '1rem 2.5rem', fontSize: '1.1rem', fontWeight: 'bold',
+          background: 'linear-gradient(135deg, #c9a84c 0%, #e8d5b7 100%)',
+          color: '#1a1a2e', border: 'none', borderRadius: '8px', cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(201, 168, 76, 0.4)'
+        }}
+      >
+        In VR eintreten
+      </button>
+    </div>
+  );
+}
+
+// Virtual joystick (DOM overlay, bottom left) - touch devices only.
+// Writes a normalized (-1..1) movement vector into the game store.
+const JOYSTICK_SIZE = 120;
+const JOYSTICK_RADIUS = JOYSTICK_SIZE / 2;
+const JOYSTICK_KNOB = 44;
+const JOYSTICK_TRAVEL = JOYSTICK_RADIUS - JOYSTICK_KNOB / 2;
+
+function Joystick() {
+  const setMoveInput = useGameStore((s) => s.setMoveInput);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const activePointerId = useRef<number | null>(null);
+  const center = useRef({ x: 0, y: 0 });
+
+  const applyPosition = useCallback((clientX: number, clientY: number) => {
+    let dx = clientX - center.current.x;
+    let dy = clientY - center.current.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > JOYSTICK_TRAVEL) {
+      dx = (dx / dist) * JOYSTICK_TRAVEL;
+      dy = (dy / dist) * JOYSTICK_TRAVEL;
+    }
+    setKnob({ x: dx, y: dy });
+    setMoveInput({ x: dx / JOYSTICK_TRAVEL, z: dy / JOYSTICK_TRAVEL });
+  }, [setMoveInput]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current !== null) return;
+    activePointerId.current = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    center.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    applyPosition(e.clientX, e.clientY);
+    e.stopPropagation();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerId.current) return;
+    applyPosition(e.clientX, e.clientY);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerId.current) return;
+    activePointerId.current = null;
+    setKnob({ x: 0, y: 0 });
+    setMoveInput({ x: 0, z: 0 });
+  };
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={{
+        position: 'absolute', bottom: '80px', left: '24px',
+        width: `${JOYSTICK_SIZE}px`, height: `${JOYSTICK_SIZE}px`,
+        borderRadius: '50%',
+        background: 'rgba(0, 0, 0, 0.35)',
+        border: '2px solid rgba(212, 175, 55, 0.6)',
+        touchAction: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        zIndex: 600,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%', top: '50%',
+          width: `${JOYSTICK_KNOB}px`, height: `${JOYSTICK_KNOB}px`,
+          marginLeft: `${-JOYSTICK_KNOB / 2 + knob.x}px`,
+          marginTop: `${-JOYSTICK_KNOB / 2 + knob.y}px`,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #c9a84c, #e8d5b7)',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  );
+}
+
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
+  const isTouchDevice = useIsTouchDevice();
+  const xrActive = useGameStore((s) => s.xrActive);
 
   useEffect(() => {
     const stages = [
@@ -50,27 +191,12 @@ export default function App() {
         </div>
       )}
 
-      {/* VR Enter Button */}
-      <div style={{
-        position: 'absolute', bottom: '120px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 100
-      }}>
-        <button
-          onClick={() => store.enterVR()}
-          style={{
-            padding: '1rem 2.5rem', fontSize: '1.1rem', fontWeight: 'bold',
-            background: 'linear-gradient(135deg, #c9a84c 0%, #e8d5b7 100%)',
-            color: '#1a1a2e', border: 'none', borderRadius: '8px', cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(201, 168, 76, 0.4)'
-          }}
-        >
-          VR Betreten
-        </button>
-      </div>
+      {/* VR Enter Button (only when immersive-vr is supported) */}
+      <VRButton />
 
       {/* Three.js Canvas with XR */}
       <Canvas
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', height: '100%', touchAction: 'none' }}
         camera={{ fov: 60, near: 0.1, far: 500, position: [0, 1.6, -8], rotation: [0, Math.PI, 0] }}
         shadows={{ enabled: true, type: THREE.PCFSoftShadowMap }}
         dpr={[1, 2]}
@@ -90,21 +216,31 @@ export default function App() {
           
           {/* Game UI - inside Canvas for useThree hook */}
           <GameStateManager />
+
+          {/* Mirror XR session state into the zustand store for DOM overlays */}
+          <XRSessionSync />
           
           <Scene />
         </XR>
       </Canvas>
 
+      {/* Virtual joystick - touch devices only */}
+      {isTouchDevice && <Joystick />}
+
       {/* Pause menu - DOM overlay outside the Canvas (works anywhere in the world) */}
       <GameUI />
 
-      {/* Instructions */}
+      {/* Instructions - adaptive per device, hidden while an XR session is active */}
       <div style={{
         position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
         color: '#888', fontSize: '14px', fontFamily: 'monospace', zIndex: 999,
-        textAlign: 'center'
+        textAlign: 'center', whiteSpace: 'nowrap'
       }}>
-        🖥️ WASD: Laufen | Maus: Drehen | VR: Linker Stick = Laufen, Rechter Stick = Drehen, Trigger = Teleport
+        {xrActive
+          ? '🥽 VR: Linker Stick = Laufen, Rechter Stick = Drehen, Trigger = Teleport'
+          : isTouchDevice
+            ? '🕹️ Joystick links: Laufen | Rechte Hälfte ziehen: Umsehen'
+            : '🖥️ WASD: Laufen | Maus ziehen: Drehen'}
       </div>
     </div>
   );
@@ -153,13 +289,25 @@ const PITCH_LIMIT = THREE.MathUtils.degToRad(85);
 // This hook handles all the XR controller input and locomotion logic
 function LocomotionController() {
   const ref = useRef<THREE.Group>(null);
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const session = useXR((s) => s.session);
   const keys = useRef({ w: false, a: false, s: false, d: false });
   const isMouseDown = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const euler = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
   const pitch = useRef(0);
+  // Touch-look state: track the dedicated look pointer (right half of screen)
+  const lookPointerId = useRef<number | null>(null);
+  const lastTouch = useRef({ x: 0, y: 0 });
+
+  // Shared look logic (mouse drag AND touch drag): yaw + pitch, clamped to +/-85°
+  const applyLook = useCallback((dx: number, dy: number) => {
+    euler.current.setFromQuaternion(camera.quaternion);
+    euler.current.y -= dx * 0.005;
+    pitch.current = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch.current - dy * 0.005));
+    euler.current.x = pitch.current;
+    camera.quaternion.setFromEuler(euler.current);
+  }, [camera]);
 
   // Browser keyboard/mouse controls
   useEffect(() => {
@@ -194,12 +342,7 @@ function LocomotionController() {
       if (isMouseDown.current) {
         const dx = e.clientX - lastMouse.current.x;
         const dy = e.clientY - lastMouse.current.y;
-        euler.current.setFromQuaternion(camera.quaternion);
-        euler.current.y -= dx * 0.005;
-        // Pitch look: vertical mouse, clamped to +/-85 degrees
-        pitch.current = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch.current - dy * 0.005));
-        euler.current.x = pitch.current;
-        camera.quaternion.setFromEuler(euler.current);
+        applyLook(dx, dy);
         lastMouse.current = { x: e.clientX, y: e.clientY };
       }
     };
@@ -217,7 +360,44 @@ function LocomotionController() {
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [camera]);
+  }, [camera, applyLook]);
+
+  // Touch-look: a touch on the RIGHT half of the canvas starts a look drag
+  // (the joystick on the left is a separate DOM element, so its pointer never
+  // reaches the canvas - multi-touch look/walk works independently via pointer IDs)
+  useEffect(() => {
+    const el = gl.domElement;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      if (lookPointerId.current !== null) return;
+      if (e.clientX < window.innerWidth / 2) return;
+      lookPointerId.current = e.pointerId;
+      lastTouch.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || e.pointerId !== lookPointerId.current) return;
+      applyLook(e.clientX - lastTouch.current.x, e.clientY - lastTouch.current.y);
+      lastTouch.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      if (e.pointerId === lookPointerId.current) lookPointerId.current = null;
+    };
+
+    el.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    return () => {
+      el.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [gl, applyLook]);
 
   // useXRControllerLocomotion - official react-three/xr v6 hook
   // Uses callback form to get velocity and rotationVelocityY
@@ -260,14 +440,20 @@ function LocomotionController() {
     if (keys.current.a) moveX -= 1;
     if (keys.current.d) moveX += 1;
 
-    if (Math.abs(moveX) > 0.1 || Math.abs(moveZ) > 0.1) {
-      // Normalize
-      const magnitude = Math.sqrt(moveX * moveX + moveZ * moveZ);
-      if (magnitude > 1) {
-        moveX /= magnitude;
-        moveZ /= magnitude;
-      }
+    // Virtual joystick (touch): analog vector, merged with keyboard
+    const joy = useGameStore.getState().moveInput;
+    moveX += joy.x;
+    moveZ += joy.z;
 
+    // Normalize (clamped to max speed 1)
+    let magnitude = Math.sqrt(moveX * moveX + moveZ * moveZ);
+    if (magnitude > 1) {
+      moveX /= magnitude;
+      moveZ /= magnitude;
+      magnitude = 1;
+    }
+
+    if (magnitude > 0.1) {
       // Get camera direction
       const cameraDirection = new THREE.Vector3();
       camera.getWorldDirection(cameraDirection);
@@ -277,10 +463,12 @@ function LocomotionController() {
       const right = new THREE.Vector3();
       right.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
 
+      // Analog speed: full keyboard input = magnitude 1, partial joystick = slower
+      const speed = magnitude * 3.0;
       const deltaX =
-        cameraDirection.x * -moveZ * 3.0 * delta + right.x * moveX * 3.0 * delta;
+        cameraDirection.x * -moveZ * speed * delta + right.x * moveX * speed * delta;
       const deltaZ =
-        cameraDirection.z * -moveZ * 3.0 * delta + right.z * moveX * 3.0 * delta;
+        cameraDirection.z * -moveZ * speed * delta + right.z * moveX * speed * delta;
 
       if (session) {
         // XR: move the XROrigin group
