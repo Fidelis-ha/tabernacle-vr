@@ -3,8 +3,6 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-console.log('[Tabernacle VR] Starting application...');
-
 // Global error handling - catch all errors and log them
 window.addEventListener('error', (event) => {
   console.error('[GLOBAL ERROR]', event.message, event.error?.stack);
@@ -29,13 +27,15 @@ if (htmlLoadingScreen) {
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   console.error('[Tabernacle VR] Root element not found!');
-  document.body.innerHTML = '<div style="color:white;padding:2rem;">Error: Root element not found</div>';
+  const errorDiv = document.createElement('div');
+  errorDiv.style.color = 'white';
+  errorDiv.style.padding = '2rem';
+  errorDiv.textContent = 'Error: Root element not found';
+  document.body.appendChild(errorDiv);
 } else {
-  console.log('[Tabernacle VR] Root element found, mounting React...');
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>
   );
-  console.log('[Tabernacle VR] React mounted successfully');
 }

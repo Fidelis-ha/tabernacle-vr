@@ -1,84 +1,84 @@
+import { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Environment, ContactShadows, BakeShadows } from '@react-three/drei';
-import { CUBIT, COURTYARD_WIDTH, COURTYARD_LENGTH } from './TabernacleFloor';
+import { ALTAR_Z, HOLY_OF_HOLIES_Z_CENTER, MENORA_X } from './TabernacleFloor';
+
+// Lighting per SPEC point 15:
+// Outside: warm desert sunlight with hard shadows, muted desert-blue sky handled in Scene
+// Inside: only the Menorah (warm, flickering) + Shekinah glory in the Holy of Holies,
+// ember glow of the incense altar, altar fire in the courtyard
 
 export function TabernacleLighting() {
   return (
     <group>
-      {/* HDR Environment for realistic reflections and lighting */}
-      <Environment preset="sunset" background={false} environmentIntensity={0.8} />
-      
-      {/* Ambient light - base illumination */}
-      <ambientLight intensity={0.6} color={0xFFFFFF} />
-      
-      {/* Main sun light - bright warm sunlight */}
+      {/* Warm desert sunlight with hard shadows */}
+      <ambientLight intensity={0.35} color={0xFFF3E0} />
       <directionalLight
-        position={[20, 40, 10]}
-        intensity={2}
-        color={0xFFE4B5}
+        position={[30, 45, -25]}
+        intensity={2.2}
+        color={0xFFE8C8}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-far={200}
-        shadow-camera-left={-80}
-        shadow-camera-right={80}
-        shadow-camera-top={80}
-        shadow-camera-bottom={-80}
+        shadow-camera-far={150}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
         shadow-bias={-0.0001}
         shadow-normalBias={0.02}
       />
-      
-      {/* Fill light */}
+      {/* Soft sky fill */}
       <directionalLight
-        position={[-10, 20, 30]}
-        intensity={0.8}
-        color={0xFFFAF0}
+        position={[-15, 25, 40]}
+        intensity={0.5}
+        color={0xC9D8E8}
       />
-      
-      {/* Courtyard fire - altar light */}
-      <pointLight
-        position={[0, 3.5, 7]}
-        intensity={4}
-        color={0xFF6600}
-        distance={25}
-        decay={2}
-        castShadow
-      />
-      
-      {/* Holy Place - Menorah glow */}
-      <pointLight
-        position={[-4, 3.5, -5.25]}
-        intensity={3}
-        color={0xFFD700}
-        distance={15}
-        decay={2}
-        castShadow
-      />
-      
-      {/* Holy of Holies - Shekinah */}
-      <pointLight
-        position={[0, 3.5, -11.25]}
-        intensity={4}
-        color={0xFFE4B5}
-        distance={10}
-        decay={2}
-      />
+
+      {/* Altar fire in the courtyard (z = 27) */}
+      <FlickerLight position={[0, 1.9, ALTAR_Z]} baseIntensity={2.5} color={0xFF6600} distance={14} />
+
+      {/* Menorah light in the Holy Place - warm, flickering (x = -1.1, z = 36) */}
+      <FlickerLight position={[MENORA_X, 1.4, 36]} baseIntensity={1.8} color={0xFFB84D} distance={10} />
+
+      {/* Shekinah glory in the Holy of Holies (z = 42.75) */}
+      <pointLight position={[0, 2.6, HOLY_OF_HOLIES_Z_CENTER]} intensity={3} color={0xFFD700} distance={9} decay={2} />
+      <pointLight position={[0, 1.6, HOLY_OF_HOLIES_Z_CENTER]} intensity={1.4} color={0xFFE4B5} distance={6} decay={2} />
     </group>
   );
 }
 
-export function TabernacleShadows() {
+function FlickerLight({
+  position,
+  baseIntensity,
+  color,
+  distance,
+}: {
+  position: [number, number, number];
+  baseIntensity: number;
+  color: number;
+  distance: number;
+}) {
+  const ref = useRef<THREE.PointLight>(null);
+
+  useFrame((state) => {
+    if (ref.current) {
+      const t = state.clock.elapsedTime;
+      const flicker =
+        Math.sin(t * 9.7) * 0.12 +
+        Math.sin(t * 15.3) * 0.08 +
+        Math.sin(t * 23.1) * 0.05;
+      ref.current.intensity = baseIntensity * (1 + flicker);
+    }
+  });
+
   return (
-    <group>
-      <ContactShadows
-        position={[0, 0.01, 0]}
-        opacity={0.5}
-        scale={60}
-        blur={2}
-        far={40}
-        resolution={256}
-        color="#1a1a2e"
-      />
-      <BakeShadows />
-    </group>
+    <pointLight
+      ref={ref}
+      position={position}
+      intensity={baseIntensity}
+      color={color}
+      distance={distance}
+      decay={2}
+    />
   );
 }

@@ -1,114 +1,138 @@
 import * as THREE from 'three';
-import { COURTYARD_WIDTH, COURTYARD_LENGTH, CUBIT, COURTYARD_Z_CENTER } from './TabernacleFloor';
-import { GOLD, BRONZE, SILVER, ACACIA_WOOD } from '../utils/materials';
+import {
+  CUBIT,
+  COURTYARD_WIDTH,
+  COURTYARD_LENGTH,
+  COURTYARD_WALL_HEIGHT,
+  GATE_WIDTH,
+  ALTAR_Z,
+  BASIN_Z,
+} from './TabernacleFloor';
+import {
+  SILVER,
+  BRONZE,
+  ACACIA_WOOD,
+  BYSSUS_WHITE,
+  CURTAIN_BLUE,
+  CURTAIN_PURPLE,
+  CURTAIN_SCARLET,
+} from '../utils/materials';
 
-// Courtyard dimensions: 50 cubits wide x 50 cubits deep (22.5m x 22.5m)
-// Exodus 27:9-19 - 20 pillars on each side, 10 pillars on each end
-// Layout: Courtyard z = 0 to z = 22.5, entrance at z = 0 (SOUTH), back at z = 22.5 (NORTH)
-// East wall is to the right when entering (positive X), West wall to the left (negative X)
+// Courtyard per Exodus 27:9-19 / SPEC:
+// 100 cubits (45m) long (z = 0 ... 45) x 50 cubits (22.5m) wide (x = -11.25 ... 11.25)
+// Curtain walls 5 cubits (2.25m) high, WHITE twisted byssus (Ex 27:9)
+// 60 pillars total: 20 south, 20 north, 10 west, 10 east (incl. gate posts)
+// Pillars: bronze sockets, silver-overlaid shafts, silver capitals/hooks (Ex 27:10-11)
+// Gate on EAST side (z = 0), 20 cubits wide, colorful blue/purple/scarlet/byssus (Ex 27:16)
 
-const PILLAR_HEIGHT = 5 * CUBIT; // 5 cubits high = 2.25m
-const PILLAR_RADIUS = 0.06;
-const CURTAIN_HEIGHT = 5 * CUBIT; // 5 cubits = 2.25m
-const GATE_WIDTH = 20 * CUBIT; // 20 cubit gate on entrance (SOUTH)
+const H = COURTYARD_WALL_HEIGHT;   // 2.25m
+const HALF_W = COURTYARD_WIDTH / 2; // 11.25m
 
 export function TabernacleCourtyard() {
-  const halfWidth = COURTYARD_WIDTH / 2;   // 11.25m
-  const halfLength = COURTYARD_LENGTH / 2; // 11.25m
-  
-  // Gate half-width for entrance gap
-  const gateHalfWidth = GATE_WIDTH / 2;    // 4.5m
-  
-  // South pillars (entrance side at z = 0)
+  // South row (x = -11.25): 20 pillars along z = 0 ... 45
   const southPillars: [number, number, number][] = [];
-  for (let i = 0; i <= 10; i++) {
-    const x = -halfWidth + i * (COURTYARD_WIDTH / 10);
-    southPillars.push([x, 0, 0]);
+  for (let i = 0; i < 20; i++) {
+    southPillars.push([-HALF_W, 0, (i * COURTYARD_LENGTH) / 19]);
   }
-  
-  // North pillars (back wall at z = 22.5)
+
+  // North row (x = +11.25): 20 pillars along z = 0 ... 45
   const northPillars: [number, number, number][] = [];
-  for (let i = 0; i <= 10; i++) {
-    const x = -halfWidth + i * (COURTYARD_WIDTH / 10);
-    northPillars.push([x, 0, COURTYARD_LENGTH]);
+  for (let i = 0; i < 20; i++) {
+    northPillars.push([HALF_W, 0, (i * COURTYARD_LENGTH) / 19]);
   }
-  
-  // East pillars (right side at x = 11.25) - with gate gap
-  const eastPillars: [number, number, number][] = [];
-  for (let i = 0; i <= 10; i++) {
-    const z = i * (COURTYARD_LENGTH / 10);
-    // Skip center portion for the gate entrance
-    if (Math.abs(z - halfLength) < gateHalfWidth) continue;
-    eastPillars.push([halfWidth, 0, z]);
-  }
-  
-  // West pillars (left side at x = -11.25)
+
+  // West row (z = 45, back): 10 pillars along x
   const westPillars: [number, number, number][] = [];
-  for (let i = 0; i <= 10; i++) {
-    const z = i * (COURTYARD_LENGTH / 10);
-    westPillars.push([-halfWidth, 0, z]);
+  for (let i = 0; i < 10; i++) {
+    westPillars.push([-HALF_W + (i * COURTYARD_WIDTH) / 9, 0, COURTYARD_LENGTH]);
   }
-  
+
+  // East row (z = 0, entrance): 6 side pillars + 4 gate pillars = 10
+  const eastPillars: [number, number, number][] = [];
+  for (let i = 0; i < 10; i++) {
+    const x = -HALF_W + (i * COURTYARD_WIDTH) / 9;
+    if (Math.abs(x) < GATE_WIDTH / 2) continue; // gate gap
+    eastPillars.push([x, 0, 0]);
+  }
+  const gatePillarXs = [-GATE_WIDTH / 2, -GATE_WIDTH / 6, GATE_WIDTH / 6, GATE_WIDTH / 2];
+  gatePillarXs.forEach((x) => eastPillars.push([x, 0, 0]));
+
+  const gateHalf = GATE_WIDTH / 2; // 4.5m
+
   return (
     <group>
-      {/* All pillars */}
-      {[...southPillars, ...northPillars, ...eastPillars, ...westPillars].map((pos, i) => (
+      {/* All 60 pillars */}
+      {[...southPillars, ...northPillars, ...westPillars, ...eastPillars].map((pos, i) => (
         <CourtyardPillar key={`pillar-${i}`} position={pos} />
       ))}
-      
-      {/* === CURTAINS - Blue, purple, scarlet, white (Exodus 27:9-16) === */}
-      
-      {/* South wall (entrance) - with gate gap */}
+
+      {/* === SIDE CURTAINS - white twisted byssus (Ex 27:9) === */}
+
+      {/* South wall (x = -11.25) */}
       <CurtainMesh
-        start={[-halfWidth, 0, 0]}
-        end={[-gateHalfWidth, 0, 0]}
-        height={CURTAIN_HEIGHT}
-        color={0x1E3A5F} // Blue
+        start={[-HALF_W, 0, 0]}
+        end={[-HALF_W, 0, COURTYARD_LENGTH]}
+        height={H}
+        material={BYSSUS_WHITE}
+      />
+
+      {/* North wall (x = +11.25) */}
+      <CurtainMesh
+        start={[HALF_W, 0, 0]}
+        end={[HALF_W, 0, COURTYARD_LENGTH]}
+        height={H}
+        material={BYSSUS_WHITE}
+      />
+
+      {/* West wall (z = 45, back) */}
+      <CurtainMesh
+        start={[-HALF_W, 0, COURTYARD_LENGTH]}
+        end={[HALF_W, 0, COURTYARD_LENGTH]}
+        height={H}
+        material={BYSSUS_WHITE}
+      />
+
+      {/* East wall (z = 0) - two segments beside the gate */}
+      <CurtainMesh
+        start={[-HALF_W, 0, 0]}
+        end={[-gateHalf, 0, 0]}
+        height={H}
+        material={BYSSUS_WHITE}
       />
       <CurtainMesh
-        start={[gateHalfWidth, 0, 0]}
-        end={[halfWidth, 0, 0]}
-        height={CURTAIN_HEIGHT}
-        color={0x1E3A5F} // Blue
+        start={[gateHalf, 0, 0]}
+        end={[HALF_W, 0, 0]}
+        height={H}
+        material={BYSSUS_WHITE}
       />
-      
-      {/* North wall (back) */}
-      <CurtainMesh
-        start={[-halfWidth, 0, COURTYARD_LENGTH]}
-        end={[halfWidth, 0, COURTYARD_LENGTH]}
-        height={CURTAIN_HEIGHT}
-        color={0x3A2D5A} // Purple/blue
-      />
-      
-      {/* West wall (left side) */}
-      <CurtainMesh
-        start={[-halfWidth, 0, 0]}
-        end={[-halfWidth, 0, COURTYARD_LENGTH]}
-        height={CURTAIN_HEIGHT}
-        color={0x8B2942} // Red/scarlet
-      />
-      
-      {/* East wall (right side) - with gate gap */}
-      <CurtainMesh
-        start={[halfWidth, 0, 0]}
-        end={[halfWidth, 0, halfLength - gateHalfWidth]}
-        height={CURTAIN_HEIGHT}
-        color={0x8B2942} // Red/scarlet
-      />
-      <CurtainMesh
-        start={[halfWidth, 0, halfLength + gateHalfWidth]}
-        end={[halfWidth, 0, COURTYARD_LENGTH]}
-        height={CURTAIN_HEIGHT}
-        color={0x8B2942} // Red/scarlet
-      />
-      
-      {/* === BRONZE ALTAR (Exodus 27:1-8) === */}
-      {/* Positioned in the courtyard, 5 cubits from the entrance */}
-      <BronzeAltar position={[0, 0, 5]} />
-      
-      {/* === BRONZE BASIN (Exodus 30:18) === */}
-      {/* Positioned between altar and Holy Place entrance */}
-      <BronzeBasin position={[0, 0, 18]} />
+
+      {/* === GATE OF THE COURTYARD (Ex 27:16) - colorful work: blue, purple, scarlet, byssus === */}
+      {/* Only colorful element of the courtyard fence; same height as the fence (2.25m) */}
+      {[
+        CURTAIN_BLUE,
+        CURTAIN_PURPLE,
+        CURTAIN_SCARLET,
+        BYSSUS_WHITE,
+      ].map((mat, i) => (
+        <mesh
+          key={`gate-stripe-${i}`}
+          position={[-gateHalf + (gateHalf / 2) * (i + 0.5) + 0, H / 2, 0]}
+          castShadow
+        >
+          <planeGeometry args={[gateHalf / 2, H]} />
+          <meshStandardMaterial
+            color={mat.color}
+            roughness={mat.roughness}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+
+      {/* === BRONZE ALTAR (Ex 27:1-8; 38:1-7) - z = 27, midline === */}
+      <BronzeAltar position={[0, 0, ALTAR_Z]} />
+
+      {/* === BRONZE BASIN (Ex 30:18; 40:7) - between altar and tabernacle, z = 29.5 === */}
+      <BronzeBasin position={[0, 0, BASIN_Z]} />
     </group>
   );
 }
@@ -116,28 +140,34 @@ export function TabernacleCourtyard() {
 function CourtyardPillar({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      {/* Bronze base */}
-      <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.12, 0.14, 0.12, 8]} />
+      {/* Bronze socket (Ex 27:10 "sockets of bronze") */}
+      <mesh position={[0, 0.07, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.13, 0.16, 0.14, 10]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      
-      {/* Acacia wood pillar */}
-      <mesh position={[0, PILLAR_HEIGHT / 2 + 0.06, 0]} castShadow>
-        <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS + 0.01, PILLAR_HEIGHT, 8]} />
-        <meshStandardMaterial {...ACACIA_WOOD} />
-      </mesh>
-      
-      {/* Silver capital */}
-      <mesh position={[0, PILLAR_HEIGHT + 0.14, 0]} castShadow>
-        <cylinderGeometry args={[0.07, 0.05, 0.12, 8]} />
+
+      {/* Silver foot on top of the socket (Ex 27:10-11) */}
+      <mesh position={[0, 0.16, 0]} castShadow>
+        <cylinderGeometry args={[0.09, 0.09, 0.05, 10]} />
         <meshStandardMaterial {...SILVER} />
       </mesh>
-      
-      {/* Gold hook at top */}
-      <mesh position={[0, PILLAR_HEIGHT + 0.24, 0]} castShadow>
-        <sphereGeometry args={[0.025, 6, 6]} />
-        <meshStandardMaterial {...GOLD} />
+
+      {/* Silver-overlaid shaft */}
+      <mesh position={[0, H / 2 + 0.07, 0]} castShadow>
+        <cylinderGeometry args={[0.055, 0.065, H, 10]} />
+        <meshStandardMaterial {...SILVER} />
+      </mesh>
+
+      {/* Silver capital with band */}
+      <mesh position={[0, H + 0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.075, 0.05, 0.12, 10]} />
+        <meshStandardMaterial {...SILVER} />
+      </mesh>
+
+      {/* Silver hook (Ex 27:10-11) */}
+      <mesh position={[0, H + 0.22, 0]} castShadow>
+        <torusGeometry args={[0.035, 0.012, 6, 12, Math.PI * 1.5]} />
+        <meshStandardMaterial {...SILVER} />
       </mesh>
     </group>
   );
@@ -147,98 +177,153 @@ interface CurtainMeshProps {
   start: [number, number, number];
   end: [number, number, number];
   height: number;
-  color: number;
+  material: { color: number; roughness: number };
 }
 
-function CurtainMesh({ start, end, height, color }: CurtainMeshProps) {
+function CurtainMesh({ start, end, height, material }: CurtainMeshProps) {
   const dx = end[0] - start[0];
   const dz = end[2] - start[2];
   const length = Math.sqrt(dx * dx + dz * dz);
   const angle = Math.atan2(dz, dx);
   const midX = (start[0] + end[0]) / 2;
   const midZ = (start[2] + end[2]) / 2;
-  
+
   return (
     <mesh
-      position={[midX, height / 2, midZ]}
+      position={[midX, height / 2 + 0.02, midZ]}
       rotation={[0, -angle, 0]}
       castShadow
       receiveShadow
     >
       <planeGeometry args={[length - 0.1, height]} />
       <meshStandardMaterial
-        color={color}
-        transparent
-        opacity={0.85}
+        color={material.color}
+        roughness={material.roughness}
+        metalness={0.0}
         side={THREE.DoubleSide}
-        roughness={0.8}
-        metalness={0.1}
       />
     </mesh>
   );
 }
 
 function BronzeAltar({ position }: { position: [number, number, number] }) {
-  // Exodus 27:1-8 - 5 cubits square, 3 cubits high
-  const altarSize = 5 * CUBIT;    // 2.25m
-  const altarHeight = 3 * CUBIT;   // 1.35m
-  
+  // Exodus 27:1-8 - 5 x 5 cubits, 3 cubits high, acacia overlaid with bronze, hollow
+  const size = 5 * CUBIT;    // 2.25m
+  const height = 3 * CUBIT;  // 1.35m
+  const wallT = 0.1;
+
   return (
     <group position={position}>
-      {/* Hollow altar - bronze overlaid acacia wood */}
-      {/* Top border */}
-      <mesh position={[0, altarHeight + 0.03, 0]} castShadow>
-        <boxGeometry args={[altarSize + 0.15, 0.08, altarSize + 0.15]} />
+      {/* Top border / ledge - rim frame of 4 narrow boxes so the grating
+          and the fire stay visible (Ex 27:5 "wegen des Rostes") */}
+      <mesh position={[0, height + 0.03, -(size + 0.15) / 2 + 0.075]} castShadow>
+        <boxGeometry args={[size + 0.15, 0.08, 0.15]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      
+      <mesh position={[0, height + 0.03, (size + 0.15) / 2 - 0.075]} castShadow>
+        <boxGeometry args={[size + 0.15, 0.08, 0.15]} />
+        <meshStandardMaterial {...BRONZE} />
+      </mesh>
+      <mesh position={[-(size + 0.15) / 2 + 0.075, height + 0.03, 0]} castShadow>
+        <boxGeometry args={[0.15, 0.08, size - 0.15]} />
+        <meshStandardMaterial {...BRONZE} />
+      </mesh>
+      <mesh position={[(size + 0.15) / 2 - 0.075, height + 0.03, 0]} castShadow>
+        <boxGeometry args={[0.15, 0.08, size - 0.15]} />
+        <meshStandardMaterial {...BRONZE} />
+      </mesh>
+
       {/* Four walls - hollow inside */}
-      <mesh position={[0, altarHeight / 2, -altarSize / 2]} castShadow>
-        <boxGeometry args={[altarSize + 0.15, altarHeight, 0.1]} />
+      <mesh position={[0, height / 2, -size / 2]} castShadow>
+        <boxGeometry args={[size + 0.15, height, wallT]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      <mesh position={[0, altarHeight / 2, altarSize / 2]} castShadow>
-        <boxGeometry args={[altarSize + 0.15, altarHeight, 0.1]} />
+      <mesh position={[0, height / 2, size / 2]} castShadow>
+        <boxGeometry args={[size + 0.15, height, wallT]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      <mesh position={[-altarSize / 2, altarHeight / 2, 0]} castShadow>
-        <boxGeometry args={[0.1, altarHeight, altarSize]} />
+      <mesh position={[-size / 2, height / 2, 0]} castShadow>
+        <boxGeometry args={[wallT, height, size]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      <mesh position={[altarSize / 2, altarHeight / 2, 0]} castShadow>
-        <boxGeometry args={[0.1, altarHeight, altarSize]} />
+      <mesh position={[size / 2, height / 2, 0]} castShadow>
+        <boxGeometry args={[wallT, height, size]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      
-      {/* Grating inside */}
-      <mesh position={[0, 0.25, 0]}>
-        <boxGeometry args={[altarSize - 0.1, 0.1, altarSize - 0.1]} />
+
+      {/* Grating / network of bronze, mounted midway inside (Ex 27:4-5) */}
+      <mesh position={[0, height * 0.5, 0]} castShadow>
+        <boxGeometry args={[size - wallT, 0.05, size - wallT]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      
-      {/* Fire on altar */}
-      <mesh position={[0, altarHeight + 0.15, 0]}>
-        <boxGeometry args={[altarSize - 0.4, 0.3, altarSize - 0.4]} />
+      {/* Grating bars */}
+      {[-0.8, -0.4, 0, 0.4, 0.8].map((z, i) => (
+        <mesh key={`grate-${i}`} position={[0, height * 0.5 + 0.04, z]}>
+          <boxGeometry args={[size - wallT, 0.03, 0.03]} />
+          <meshStandardMaterial {...BRONZE} />
+        </mesh>
+      ))}
+
+      {/* Four HORNs at the four corners (Ex 27:2) */}
+      {[
+        [-size / 2, height, -size / 2],
+        [size / 2, height, -size / 2],
+        [-size / 2, height, size / 2],
+        [size / 2, height, size / 2],
+      ].map((pos, i) => (
+        <mesh key={`horn-${i}`} position={pos as [number, number, number]} castShadow>
+          <coneGeometry args={[0.09, 0.3, 8]} />
+          <meshStandardMaterial {...BRONZE} />
+        </mesh>
+      ))}
+
+      {/* Fire on the grating - 2-3 overlapping cones instead of a solid block */}
+      <mesh position={[0, height * 0.5 + 0.35, 0]}>
+        <coneGeometry args={[0.45, 0.85, 8]} />
         <meshStandardMaterial
-          color={0xFF4400}
-          emissive={0xFF2200}
+          color={0xFF6600}
+          emissive={0xFF3300}
           emissiveIntensity={2.5}
         />
       </mesh>
-      
+      <mesh position={[0.18, height * 0.5 + 0.22, 0.1]} rotation={[0.12, 0, -0.15]}>
+        <coneGeometry args={[0.3, 0.55, 8]} />
+        <meshStandardMaterial
+          color={0xFF8833}
+          emissive={0xFF5500}
+          emissiveIntensity={3}
+        />
+      </mesh>
+      <mesh position={[-0.15, height * 0.5 + 0.18, -0.12]} rotation={[-0.1, 0, 0.18]}>
+        <coneGeometry args={[0.26, 0.45, 8]} />
+        <meshStandardMaterial
+          color={0xFFAA44}
+          emissive={0xFF7700}
+          emissiveIntensity={3.5}
+        />
+      </mesh>
+
       {/* Fire light */}
-      <pointLight position={[0, altarHeight + 0.5, 0]} intensity={2} color={0xFF6600} distance={10} decay={2} />
-      
-      {/* Rings for poles */}
+      <pointLight position={[0, height + 0.4, 0]} intensity={2} color={0xFF6600} distance={12} decay={2} />
+
+      {/* Rings at the four LOWER corners (Ex 27:4 - "in den vier Ecken ... unten") */}
       {[
-        [-altarSize / 2 - 0.1, altarHeight / 2, 0],
-        [altarSize / 2 + 0.1, altarHeight / 2, 0],
-        [0, altarHeight / 2, -altarSize / 2 - 0.1],
-        [0, altarHeight / 2, altarSize / 2 + 0.1],
+        [-size / 2 + 0.05, 0.25, -size / 2 + 0.05],
+        [size / 2 - 0.05, 0.25, -size / 2 + 0.05],
+        [-size / 2 + 0.05, 0.25, size / 2 - 0.05],
+        [size / 2 - 0.05, 0.25, size / 2 - 0.05],
       ].map((pos, i) => (
-        <mesh key={`ring-${i}`} position={pos as [number, number, number]}>
-          <torusGeometry args={[0.08, 0.02, 6, 12]} />
+        <mesh key={`ring-${i}`} position={pos as [number, number, number]} rotation={[0, Math.PI / 2, 0]}>
+          <torusGeometry args={[0.07, 0.02, 6, 12]} />
           <meshStandardMaterial {...BRONZE} />
+        </mesh>
+      ))}
+
+      {/* Carrying poles - acacia wood overlaid with bronze (Ex 27:6-7), resting in the rings */}
+      {[-size / 2 + 0.05, size / 2 - 0.05].map((z, i) => (
+        <mesh key={`pole-${i}`} position={[0, 0.25, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <cylinderGeometry args={[0.05, 0.05, size + 1.2, 8]} />
+          <meshStandardMaterial {...ACACIA_WOOD} />
         </mesh>
       ))}
     </group>
@@ -246,36 +331,36 @@ function BronzeAltar({ position }: { position: [number, number, number] }) {
 }
 
 function BronzeBasin({ position }: { position: [number, number, number] }) {
-  // Exodus 30:18 - Bronze basin on a stand
+  // Exodus 30:18 - bronze basin with bronze stand
   return (
     <group position={position}>
-      {/* Stand - acacia wood */}
-      <mesh position={[0, 0.6, 0]} castShadow>
-        <cylinderGeometry args={[0.35, 0.45, 1.2, 8]} />
-        <meshStandardMaterial {...ACACIA_WOOD} />
-      </mesh>
-      
-      {/* Bronze basin */}
-      <mesh position={[0, 1.4, 0]} castShadow>
-        <cylinderGeometry args={[0.9, 0.6, 0.5, 16]} />
+      {/* Bronze stand */}
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <cylinderGeometry args={[0.3, 0.42, 1.0, 10]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
-      
-      {/* Water surface */}
-      <mesh position={[0, 1.45, 0]}>
-        <cylinderGeometry args={[0.85, 0.6, 0.4, 16]} />
+
+      {/* Bronze basin */}
+      <mesh position={[0, 1.25, 0]} castShadow>
+        <cylinderGeometry args={[0.8, 0.5, 0.5, 16]} />
+        <meshStandardMaterial {...BRONZE} />
+      </mesh>
+
+      {/* Water surface - dark greenish-brown, reflecting bronze and sky */}
+      <mesh position={[0, 1.42, 0]}>
+        <cylinderGeometry args={[0.74, 0.6, 0.12, 16]} />
         <meshStandardMaterial
-          color={0x87CEEB}
+          color={0x3E5C52}
           transparent
-          opacity={0.6}
-          metalness={0.2}
-          roughness={0.1}
+          opacity={0.75}
+          metalness={0.3}
+          roughness={0.05}
         />
       </mesh>
-      
+
       {/* Basin rim */}
-      <mesh position={[0, 1.68, 0]}>
-        <torusGeometry args={[0.88, 0.035, 8, 24]} />
+      <mesh position={[0, 1.51, 0]}>
+        <torusGeometry args={[0.79, 0.035, 8, 24]} />
         <meshStandardMaterial {...BRONZE} />
       </mesh>
     </group>

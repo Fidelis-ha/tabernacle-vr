@@ -1,35 +1,41 @@
-import { useRef } from 'react';
+import { Suspense } from 'react';
 import * as THREE from 'three';
+import { Environment } from '@react-three/drei';
 import { TabernacleFloor } from './TabernacleFloor';
 import { TabernacleCourtyard } from './TabernacleCourtyard';
 import { HolyPlace } from './HolyPlace';
 import { HolyOfHolies } from './HolyOfHolies';
+import { TabernacleLighting } from './TabernacleLighting';
+import { TabernacleAtmosphere } from './TabernacleAtmosphere';
 
 export function Scene() {
-  const groupRef = useRef<THREE.Group>(null);
-  
   return (
-    <group ref={groupRef}>
-      {/* === SIMPLE SKY === */}
-      <mesh position={[0, 50, 15]}>
-        <sphereGeometry args={[180, 32, 32]} />
-        <meshBasicMaterial color={0x87CEEB} side={THREE.BackSide} />
+    <group>
+      {/* === MUTED DESERT-BLUE SKY (not toybox light blue) === */}
+      <mesh position={[0, 30, 20]}>
+        <sphereGeometry args={[300, 32, 16]} />
+        <meshStandardMaterial color={0x9DB4C4} side={THREE.BackSide} roughness={1} />
       </mesh>
-      
-      {/* === SIMPLE LIGHTING === */}
-      <ambientLight intensity={0.7} color={0xffffff} />
-      <directionalLight position={[10, 20, 10]} intensity={1.5} color={0xffffff} castShadow />
-      <pointLight position={[0, 4, 7]} intensity={3} color={0xFF6600} distance={20} />
-      <pointLight position={[-4, 4, -5.25]} intensity={2} color={0xFFD700} distance={12} />
-      <pointLight position={[0, 4, -11.25]} intensity={2} color={0xFFE4B5} distance={10} />
-      
+
+      {/* === WARM DUSTY FOG against the hard diorama horizon === */}
+      <fog attach="fog" args={[0xD8C4A0, 60, 260]} />
+
+      {/* === ENVIRONMENT MAP so gold/silver/bronze metals reflect (not black) === */}
+      <Suspense fallback={null}>
+        <Environment preset="sunset" />
+      </Suspense>
+
+      {/* === LIGHTING & ATMOSPHERE (SPEC point 15) === */}
+      <TabernacleLighting />
+      <TabernacleAtmosphere />
+
       {/* === COURTYARD === */}
       <TabernacleFloor />
       <TabernacleCourtyard />
-      
+
       {/* === HOLY PLACE === */}
       <HolyPlace />
-      
+
       {/* === HOLY OF HOLIES === */}
       <HolyOfHolies />
     </group>
