@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple WebGL Test</title>
+  <style>
+    body { margin: 0; padding: 0; background: #000; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<div id="status" style="color: white; font-size: 24px; padding: 20px;">Loading...</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const status = document.getElementById('status');
+status.textContent = 'Three.js module loaded';
+
+try {
+  // Create renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setClearColor(0x111122);
+  document.body.appendChild(renderer.domElement);
+  
+  status.textContent = 'Renderer created: ' + renderer.domElement.width + 'x' + renderer.domElement.height;
+  
+  // Create scene
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111122);
+  
+  // Add fog
+  scene.fog = new THREE.Fog(0x111122, 10, 50);
+  
+  // Add camera
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 2, 8);
+  camera.lookAt(0, 0, 0);
+  
+  // Add lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+  
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  directionalLight.position.set(5, 10, 7);
+  directionalLight.castShadow = true;
+  scene.add(directionalLight);
+  
+  // Add colored test objects
+  // Red cube
+  const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
+  const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+  const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+  cube.position.set(-4, 2, 0);
+  cube.castShadow = true;
+  scene.add(cube);
+  
+  // Green sphere
+  const sphereGeometry = new THREE.SphereGeometry(1.2, 32, 32);
+  const sphereMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  sphere.position.set(0, 2, 0);
+  sphere.castShadow = true;
+  scene.add(sphere);
+  
+  // Blue cylinder
+  const cylinderGeometry = new THREE.CylinderGeometry(0.8, 0.8, 2, 16);
+  const cylinderMaterial = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+  const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+  cylinder.position.set(4, 2, 0);
+  cylinder.castShadow = true;
+  scene.add(cylinder);
+  
+  // Large ground plane
+  const planeGeometry = new THREE.PlaneGeometry(50, 50);
+  const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x556b2f });
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.rotation.x = -Math.PI / 2;
+  plane.receiveShadow = true;
+  scene.add(plane);
+  
+  // Yellow cone
+  const coneGeometry = new THREE.ConeGeometry(1, 2, 8);
+  const coneMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+  const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+  cone.position.set(0, 4, 4);
+  cone.castShadow = true;
+  scene.add(cone);
+  
+  status.textContent = 'Scene created with 5 objects. Rendering...';
+  
+  // Render
+  renderer.render(scene, camera);
+  status.textContent = 'SUCCESS: Simple scene rendered! Red cube, green sphere, blue cylinder, yellow cone, green ground visible.';
+  status.style.color = '#00ff00';
+  
+  console.log('WebGL Test: Scene rendered successfully');
+  console.log('Canvas:', renderer.domElement.width, 'x', renderer.domElement.height);
+  
+} catch(e) {
+  status.textContent = 'FAILED: ' + e.message;
+  status.style.color = 'red';
+  console.error('WebGL Test Error:', e);
+}
+</script>
+</body>
+</html>

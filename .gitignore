@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local dev TLS certs (self-signed, for WebXR dev server)
+key.pem
+cert.pem
+
+# environment / secrets
+.env
+.env.*
+
+# logs
+*.log
+npm-debug.log*
+
+# editor
+.vscode/
+.idea/
+.DS_Store
