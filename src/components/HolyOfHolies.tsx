@@ -12,7 +12,8 @@ import { GOLD, SILVER, CURTAIN_BLUE, CURTAIN_PURPLE, CURTAIN_SCARLET } from '../
 
 // Holy of Holies per Exodus 25:10-22 / 26:31-34 / SPEC:
 // Cube 4.5 x 4.5 x 4.5m (10 cubits), z = 40.5 ... 45
-// Walls like the tabernacle: gold-overlaid acacia boards (west wall: 8 boards + 2 corner frames)
+// Walls like the tabernacle: gold-overlaid acacia boards
+// (west wall per Ex 26:22-25: 6 boards + 2 L-shaped corner boards = 8, 16 silver sockets)
 // Veil (Parochet): 4 colors (blue, purple, scarlet, byssus) with cherubim embroidery,
 // hung on 4 gold pillars on 4 silver sockets (Ex 26:32) at z = 40.5
 // Ark: 2.5 x 1.5 x 1.5 cubits, 4 rings at the LOWER corners, carrying staves, solid gold Kapporet,
@@ -28,7 +29,7 @@ export function HolyOfHolies() {
       {/* South & north sides, z = 40.275 ... 45 */}
       <SideBeamWall x={-HALF_W} zStart={HOLY_WALL_SPLIT_Z} zEnd={HOLY_OF_HOLIES_Z_END} />
       <SideBeamWall x={HALF_W} zStart={HOLY_WALL_SPLIT_Z} zEnd={HOLY_OF_HOLIES_Z_END} />
-      {/* West back wall: 8 boards + 2 corner frame boards (Ex 26:22-25) */}
+      {/* West back wall: 6 boards + 2 L-shaped corner boards (Ex 26:22-25) */}
       <WestBeamWall />
 
       {/* === VEIL (PAROCHET) on 4 gold pillars (Ex 26:31-33) === */}
@@ -44,11 +45,16 @@ export function HolyOfHolies() {
 }
 
 function WestBeamWall() {
-  // 8 boards across the west wall + 2 corner frame boards (Ex 26:22-25)
-  const count = 8;
+  // West wall per Ex 26:22-25: SIX boards across the inner width + TWO L-shaped
+  // corner boards (one leg on the west face, one leg embracing the end of the
+  // side wall from the outside) = 8 boards total, 16 silver sockets
+  // (2 sockets per board -> 6*2 + 2*2 = 16).
+  const count = 6;
   const spacing = TENT_WIDTH / count;
   const backZ = HOLY_OF_HOLIES_Z_END; // 45
   const plankLen = spacing * 0.93;
+  // Ex 26:27-28: the MIDDLE of the 5 bars runs end to end, the other 4 are
+  // half as long and meet in the middle (small offset visible, OK)
   const barYs = [0.55, 1.4, TENT_HEIGHT / 2, 3.1, 3.95];
 
   return (
@@ -61,34 +67,71 @@ function WestBeamWall() {
               <boxGeometry args={[plankLen, TENT_HEIGHT - 0.2, 0.12]} />
               <meshStandardMaterial {...GOLD} />
             </mesh>
-            <mesh position={[x, 0.1, backZ - 0.06]} castShadow>
-              <boxGeometry args={[Math.min(0.36, plankLen + 0.06), 0.2, 0.28]} />
-              <meshStandardMaterial {...SILVER} />
-            </mesh>
+            {/* 2 silver sockets under each board (Ex 26:21, one talent each) */}
+            {[-0.14, 0.14].map((dx, s) => (
+              <mesh key={`wsock-${s}`} position={[x + dx, 0.1, backZ - 0.06]} castShadow>
+                <boxGeometry args={[Math.min(0.2, plankLen - 0.14), 0.2, 0.28]} />
+                <meshStandardMaterial {...SILVER} />
+              </mesh>
+            ))}
           </group>
         );
       })}
 
-      {/* 2 corner frame boards (Winkelstuecke), diagonally at the back corners */}
+      {/* 2 L-shaped corner boards (Ex 26:23-25 "doubled boards"): each with one
+          leg on the west face and one leg embracing the side wall end from outside */}
       {[-1, 1].map((side) => (
-        <mesh
-          key={`corner-${side}`}
-          position={[side * (HALF_W - 0.16), TENT_HEIGHT / 2 + 0.2, backZ - 0.36]}
-          rotation={[0, side * (Math.PI / 4), 0]}
-          castShadow
-        >
-          <boxGeometry args={[0.12, TENT_HEIGHT - 0.2, 0.55]} />
-          <meshStandardMaterial {...GOLD} />
-        </mesh>
+        <group key={`corner-${side}`}>
+          {/* Leg on the west face */}
+          <mesh
+            position={[side * (HALF_W + 0.03), TENT_HEIGHT / 2 + 0.2, backZ - 0.06]}
+            castShadow
+          >
+            <boxGeometry args={[0.3, TENT_HEIGHT - 0.2, 0.12]} />
+            <meshStandardMaterial {...GOLD} />
+          </mesh>
+          {/* Leg embracing the side wall end from outside */}
+          <mesh
+            position={[side * (HALF_W + 0.12), TENT_HEIGHT / 2 + 0.2, backZ - 0.28]}
+            castShadow
+          >
+            <boxGeometry args={[0.12, TENT_HEIGHT - 0.2, 0.5]} />
+            <meshStandardMaterial {...GOLD} />
+          </mesh>
+          {/* Silver sockets under the corner board (2 per corner) */}
+          <mesh position={[side * (HALF_W + 0.03), 0.1, backZ - 0.06]} castShadow>
+            <boxGeometry args={[0.3, 0.2, 0.28]} />
+            <meshStandardMaterial {...SILVER} />
+          </mesh>
+          <mesh position={[side * (HALF_W + 0.12), 0.1, backZ - 0.28]} castShadow>
+            <boxGeometry args={[0.28, 0.2, 0.36]} />
+            <meshStandardMaterial {...SILVER} />
+          </mesh>
+        </group>
       ))}
 
-      {/* 5 bars along the west wall */}
-      {barYs.map((y, bi) => (
-        <mesh key={`wbar-${bi}`} position={[0, y, backZ - 0.12]} rotation={[0, Math.PI / 2, 0]} castShadow>
-          <cylinderGeometry args={[0.04, 0.04, TENT_WIDTH, 8]} />
-          <meshStandardMaterial {...GOLD} />
-        </mesh>
-      ))}
+      {/* 5 bars along the west wall (Ex 26:27-28):
+          middle bar runs through, the other 4 are half bars meeting in the middle */}
+      {barYs.map((y, bi) =>
+        bi === 2 ? (
+          <mesh key={`wbar-${bi}`} position={[0, y, backZ - 0.12]} rotation={[0, Math.PI / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.04, 0.04, TENT_WIDTH, 8]} />
+            <meshStandardMaterial {...GOLD} />
+          </mesh>
+        ) : (
+          [-1, 1].map((half) => (
+            <mesh
+              key={`wbar-${bi}-${half}`}
+              position={[half * (TENT_WIDTH / 4 + 0.015), y, backZ - 0.12]}
+              rotation={[0, Math.PI / 2, 0]}
+              castShadow
+            >
+              <cylinderGeometry args={[0.04, 0.04, TENT_WIDTH / 2, 8]} />
+              <meshStandardMaterial {...GOLD} />
+            </mesh>
+          ))
+        )
+      )}
     </group>
   );
 }

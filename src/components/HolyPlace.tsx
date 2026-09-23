@@ -22,6 +22,7 @@ import {
   CURTAIN_BLUE,
   CURTAIN_PURPLE,
   CURTAIN_SCARLET,
+  BYSSUS_WHITE,
 } from '../utils/materials';
 
 // Holy Place per Exodus 26:15-37 / SPEC:
@@ -69,7 +70,8 @@ interface SideBeamWallProps {
 }
 
 // A wall of gold-overlaid boards standing along the z axis, with silver
-// sockets and 5 gold-covered bars running through gold rings (Ex 26:15-29).
+// sockets and 5 gold-covered bars held by gold rings (Ex 26:15-29); the middle
+// bar runs through end to end, the other 4 meet in the middle (Ex 26:27-28).
 // Exported for reuse by HolyOfHolies.
 export function SideBeamWall({ x, zStart, zEnd }: SideBeamWallProps) {
   const length = zEnd - zStart;
@@ -99,13 +101,29 @@ export function SideBeamWall({ x, zStart, zEnd }: SideBeamWallProps) {
         );
       })}
 
-      {/* 5 horizontal bars, gold overlaid (Ex 26:26-28) */}
-      {barYs.map((y, bi) => (
-        <mesh key={`bar-${bi}`} position={[x, y, (zStart + zEnd) / 2]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.04, 0.04, length, 8]} />
-          <meshStandardMaterial {...GOLD} />
-        </mesh>
-      ))}
+      {/* 5 horizontal bars, gold overlaid (Ex 26:26-28): the MIDDLE bar
+          (TENT_HEIGHT/2) runs end to end, the other 4 are half as long and
+          meet in the middle (small offset visible, OK) */}
+      {barYs.map((y, bi) =>
+        bi === 2 ? (
+          <mesh key={`bar-${bi}`} position={[x, y, (zStart + zEnd) / 2]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.04, 0.04, length, 8]} />
+            <meshStandardMaterial {...GOLD} />
+          </mesh>
+        ) : (
+          [-1, 1].map((half, hi) => (
+            <mesh
+              key={`bar-${bi}-${hi}`}
+              position={[x, y, (zStart + zEnd) / 2 + half * (length / 4 + 0.015)]}
+              rotation={[Math.PI / 2, 0, 0]}
+              castShadow
+            >
+              <cylinderGeometry args={[0.04, 0.04, length / 2, 8]} />
+              <meshStandardMaterial {...GOLD} />
+            </mesh>
+          ))
+        )
+      )}
 
       {/* Gold rings holding the bars */}
       {barYs.map((y, bi) =>
@@ -130,6 +148,8 @@ function RoofLayers() {
   // c) ram skins dyed red
   // d) tachash skins (dark)
   // 1-cubit overhang at the front (east, z = 31.5), half curtain hanging at the back (Ex 26:9,12-13)
+  // Guy ropes + bronze pegs at the outer edge of the goat hair cover
+  // (Ex 27:19; 35:18; 38:20), 5 per side
   const frontOverhang = CUBIT; // 0.45m beyond the front wall
   const layers = [
     { w: 4.9, t: 0.03, back: 45.3, y: 4.515, mat: { color: 0x45459C, roughness: 0.75 } },   // byssus w/ cherubim (blue/violet)
@@ -137,9 +157,30 @@ function RoofLayers() {
     { w: 5.8, t: 0.04, back: 45.9, y: 4.61, mat: RAM_SKIN },                                // ram skins red
     { w: 6.25, t: 0.05, back: 46.2, y: 4.66, mat: TACHASH },                                // tachash dark
   ];
+  // Underside of layer a (inside view): 4-color stripes across the length axis
+  // (Ex 26:1) + subdued golden cherubim hints, outer side stays dark blue
+  const undersideColors = [CURTAIN_BLUE, CURTAIN_PURPLE, CURTAIN_SCARLET, BYSSUS_WHITE];
+  const stripeCount = 8;
+  const goatHair = layers[1];
+  const goatHairFront = TENT_Z_START - frontOverhang - 0.05;
+  const ropeZs = Array.from({ length: 5 }, (_, i) => 32 + i * 3.25);
 
   return (
     <group>
+      {/* Guy ropes from the goat hair cover edge down to bronze pegs in the ground */}
+      {[-1, 1].map((side) =>
+        ropeZs.map((z, i) => {
+          const edgeX = side * (goatHair.w / 2);
+          const pegX = side * (goatHair.w / 2 + 1.3);
+          return (
+            <group key={`rguy-${side}-${i}`}>
+              <RoofRope start={[edgeX, goatHair.y - goatHair.t / 2, z]} end={[pegX, 0.25, z]} />
+              <BronzePeg position={[pegX, 0.25, z]} />
+            </group>
+          );
+        })
+      )}
+
       {layers.map((l, i) => {
         const front = TENT_Z_START - frontOverhang - i * 0.05;
         const len = l.back - front;
@@ -164,10 +205,79 @@ function RoofLayers() {
                 {...('transparent' in l.mat ? { transparent: true, opacity: (l.mat as typeof GOAT_HAIR).opacity } : {})}
               />
             </mesh>
+
+            {/* Underside of the byssus layer (visible from inside): 4-color
+                crosswise stripes + golden cherubim hints; the outer side of the
+                base plate stays dark blue */}
+            {i === 0 && (
+              <group>
+                {Array.from({ length: stripeCount }).map((_, si) => {
+                  const depth = len / stripeCount;
+                  const c = undersideColors[si % undersideColors.length];
+                  return (
+                    <mesh
+                      key={`under-${si}`}
+                      position={[0, l.y - l.t / 2 - 0.001, front + depth * (si + 0.5)]}
+                      rotation={[Math.PI / 2, 0, 0]}
+                    >
+                      <planeGeometry args={[l.w, depth]} />
+                      <meshStandardMaterial color={c.color} roughness={0.7} side={THREE.DoubleSide} />
+                    </mesh>
+                  );
+                })}
+                {/* Subdued golden cherubim silhouettes (like the veil embroidery) */}
+                {[0.28, 0.5, 0.72].map((frac, ci) => (
+                  <group key={`underch-${ci}`} position={[0, l.y - l.t / 2 - 0.003, front + len * frac]}>
+                    {[-0.7, 0.7].map((x, wi) => (
+                      <group key={`underch-w-${wi}`} position={[x, 0, 0]}>
+                        <mesh rotation={[Math.PI / 2, 0, wi === 0 ? 0.5 : -0.5]}>
+                          <planeGeometry args={[0.5, 0.2]} />
+                          <meshStandardMaterial color={0xD4AF37} metalness={0.6} roughness={0.35} transparent opacity={0.3} side={THREE.DoubleSide} />
+                        </mesh>
+                        <mesh rotation={[Math.PI / 2, 0, wi === 0 ? -0.4 : 0.4]}>
+                          <planeGeometry args={[0.38, 0.16]} />
+                          <meshStandardMaterial color={0xD4AF37} metalness={0.6} roughness={0.35} transparent opacity={0.24} side={THREE.DoubleSide} />
+                        </mesh>
+                      </group>
+                    ))}
+                  </group>
+                ))}
+              </group>
+            )}
           </group>
         );
       })}
     </group>
+  );
+}
+
+function RoofRope({ start, end }: { start: [number, number, number]; end: [number, number, number] }) {
+  // Thin guy rope oriented from start to end (color 0xD8CBB0)
+  const s = new THREE.Vector3(...start);
+  const e = new THREE.Vector3(...end);
+  const dir = e.clone().sub(s);
+  const length = dir.length();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    dir.normalize()
+  );
+  const mid = s.clone().add(e).multiplyScalar(0.5);
+
+  return (
+    <mesh position={mid} quaternion={quaternion}>
+      <cylinderGeometry args={[0.008, 0.008, length, 5]} />
+      <meshStandardMaterial color={0xD8CBB0} roughness={0.9} />
+    </mesh>
+  );
+}
+
+function BronzePeg({ position }: { position: [number, number, number] }) {
+  // Small bronze tent peg in the ground (Ex 27:19; 38:20), no shadows for performance
+  return (
+    <mesh position={[position[0], 0.125, position[2]]}>
+      <cylinderGeometry args={[0.022, 0.014, 0.25, 6]} />
+      <meshStandardMaterial {...BRONZE} />
+    </mesh>
   );
 }
 
@@ -303,6 +413,27 @@ function Menora({ position }: { position: [number, number, number] }) {
             <meshStandardMaterial color={0xFFDD44} emissive={0xFFAA00} emissiveIntensity={4} />
           </mesh>
         </group>
+      ))}
+      {/* Gold accessories of the lampstand (Ex 25:38): tongs and snuff dishes
+          of pure gold - small, beside the base */}
+      <mesh position={[0.19, 0.008, 0.09]}>
+        <cylinderGeometry args={[0.02, 0.014, 0.016, 8]} />
+        <meshStandardMaterial {...GOLD} />
+      </mesh>
+      <mesh position={[0.25, 0.007, 0.01]}>
+        <cylinderGeometry args={[0.017, 0.012, 0.014, 8]} />
+        <meshStandardMaterial {...GOLD} />
+      </mesh>
+      {/* Fire-tongs: two narrow arms opening slightly */}
+      {[-1, 1].map((s) => (
+        <mesh
+          key={`tongs-${s}`}
+          position={[0.22 + s * 0.011, 0.004, -0.05]}
+          rotation={[0, 0.4 + s * 0.14, 0]}
+        >
+          <boxGeometry args={[0.045, 0.006, 0.007]} />
+          <meshStandardMaterial {...GOLD} />
+        </mesh>
       ))}
       {/* Flickering lampstand light lives in TabernacleLighting (no duplicate light here) */}
     </group>

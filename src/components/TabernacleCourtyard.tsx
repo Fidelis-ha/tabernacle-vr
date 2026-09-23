@@ -23,6 +23,7 @@ import {
 // Curtain walls 5 cubits (2.25m) high, WHITE twisted byssus (Ex 27:9)
 // 60 pillars total: 20 south, 20 north, 10 west, 10 east (incl. gate posts)
 // Pillars: bronze sockets, silver-overlaid shafts, silver capitals/hooks (Ex 27:10-11)
+// Guy ropes from the pillar tops to bronze pegs in the ground (Ex 27:19; 35:18; 38:20)
 // Gate on EAST side (z = 0), 20 cubits wide, colorful blue/purple/scarlet/byssus (Ex 27:16)
 
 const H = COURTYARD_WALL_HEIGHT;   // 2.25m
@@ -58,6 +59,38 @@ export function TabernacleCourtyard() {
   gatePillarXs.forEach((x) => eastPillars.push([x, 0, 0]));
 
   const gateHalf = GATE_WIDTH / 2; // 4.5m
+
+  // Guy ropes + bronze pegs (Ex 27:19; 35:18; 38:20): pegs every ~4.5m along
+  // the outer line, rope from the nearest pillar top down to the peg top
+  const guyLines: { pillar: [number, number, number]; peg: [number, number, number] }[] = [];
+  const pillarStep = COURTYARD_LENGTH / 19;
+  // South & north walls (pegs 1m outward, skipping the shared corners)
+  for (let i = 1; i < 10; i++) {
+    const z = (i * COURTYARD_LENGTH) / 10;
+    const pillarZ = Math.round(z / pillarStep) * pillarStep;
+    for (const side of [-1, 1]) {
+      guyLines.push({
+        pillar: [side * HALF_W, H + 0.05, pillarZ],
+        peg: [side * (HALF_W + 1), 0.25, z],
+      });
+    }
+  }
+  // West wall (back, z = 45 + 1m outward)
+  for (let i = 0; i <= 5; i++) {
+    const x = -HALF_W + (i * COURTYARD_WIDTH) / 5;
+    const pillarX = Math.round((x + HALF_W) / (COURTYARD_WIDTH / 9)) * (COURTYARD_WIDTH / 9) - HALF_W;
+    guyLines.push({
+      pillar: [pillarX, H + 0.05, COURTYARD_LENGTH],
+      peg: [x, 0.25, COURTYARD_LENGTH + 1],
+    });
+  }
+  // East wall (entrance side, z = -1m outward, beside the gate)
+  for (const side of [-1, 1]) {
+    for (const x of [side * HALF_W, side * (HALF_W - GATE_WIDTH / 2)]) {
+      const pillarX = Math.max(-HALF_W, Math.min(HALF_W, Math.round((x + HALF_W) / (COURTYARD_WIDTH / 9)) * (COURTYARD_WIDTH / 9) - HALF_W));
+      guyLines.push({ pillar: [pillarX, H + 0.05, 0], peg: [x, 0.25, -1] });
+    }
+  }
 
   return (
     <group>
@@ -128,12 +161,52 @@ export function TabernacleCourtyard() {
         </mesh>
       ))}
 
+      {/* === GUY ROPES + BRONZE PEGS (Ex 27:19; 35:18; 38:20) === */}
+      {/* Pegs driven into the ground along the outer line of the courtyard,
+          ropes from the pillar tops slanting outward down to the pegs */}
+      {guyLines.map((g, i) => (
+        <group key={`guy-${i}`}>
+          <Rope start={g.pillar} end={g.peg} />
+          <BronzePeg position={g.peg} />
+        </group>
+      ))}
+
       {/* === BRONZE ALTAR (Ex 27:1-8; 38:1-7) - z = 27, midline === */}
       <BronzeAltar position={[0, 0, ALTAR_Z]} />
 
       {/* === BRONZE BASIN (Ex 30:18; 40:7) - between altar and tabernacle, z = 29.5 === */}
       <BronzeBasin position={[0, 0, BASIN_Z]} />
     </group>
+  );
+}
+
+function Rope({ start, end }: { start: [number, number, number]; end: [number, number, number] }) {
+  // Thin guy rope (cylinder oriented from start to end), color 0xD8CBB0
+  const s = new THREE.Vector3(...start);
+  const e = new THREE.Vector3(...end);
+  const dir = e.clone().sub(s);
+  const length = dir.length();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    dir.normalize()
+  );
+  const mid = s.clone().add(e).multiplyScalar(0.5);
+
+  return (
+    <mesh position={mid} quaternion={quaternion}>
+      <cylinderGeometry args={[0.008, 0.008, length, 5]} />
+      <meshStandardMaterial color={0xD8CBB0} roughness={0.9} />
+    </mesh>
+  );
+}
+
+function BronzePeg({ position }: { position: [number, number, number] }) {
+  // Small bronze tent peg driven into the ground (Ex 27:19; 38:20)
+  return (
+    <mesh position={[position[0], 0.125, position[2]]}>
+      <cylinderGeometry args={[0.022, 0.014, 0.25, 6]} />
+      <meshStandardMaterial {...BRONZE} />
+    </mesh>
   );
 }
 
