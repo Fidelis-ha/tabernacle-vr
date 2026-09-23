@@ -1,15 +1,29 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { XR, XROrigin, useXR, useXRControllerLocomotion, createXRStore } from '@react-three/xr';
+import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { Scene } from './components/Scene';
-import { GameStateManager, GameUI, useGameStore } from './components/GameUI';
+import { GameStateManager, GameUI, useGameStore, ensureAudioStarted } from './components/GameUI';
 
 // Create XR store with teleport enabled
 const store = createXRStore({
   controller: { teleportPointer: true },
   hand: { teleportPointer: true }
 });
+
+// Postprocessing (SPEC aaa, a): Bloom + Vignette NUR ausserhalb XR.
+// In XR gilt stattdessen: ACES-Tonemapping + Foveation (siehe onCreated).
+function PostFX() {
+  const session = useXR((s) => s.session);
+  if (session) return null;
+  return (
+    <EffectComposer multisampling={0}>
+      <Bloom luminanceThreshold={0.75} luminanceSmoothing={0.25} intensity={0.55} mipmapBlur />
+      <Vignette offset={0.25} darkness={0.55} />
+    </EffectComposer>
+  );
+}
 
 // Touch device detection: coarse pointer (phones/tablets) OR any touch support
 function useIsTouchDevice(): boolean {
@@ -54,7 +68,10 @@ function VRButton() {
       zIndex: 100
     }}>
       <button
-        onClick={() => store.enterVR()}
+        onClick={() => {
+          ensureAudioStarted(); // Audio-Init beim VR-Eintritt (User-Gesture)
+          store.enterVR();
+        }}
         style={{
           padding: '1rem 2.5rem', fontSize: '1.1rem', fontWeight: 'bold',
           background: 'linear-gradient(135deg, #c9a84c 0%, #e8d5b7 100%)',
@@ -194,33 +211,41 @@ export default function App() {
       {/* VR Enter Button (only when immersive-vr is supported) */}
       <VRButton />
 
-      {/* Three.js Canvas with XR */}
+      {/* Three.js Canvas with XR — Quest-3-Settings (Budget-Regeln 6-7):
+          dpr [1,2], high-performance, ACESFilmic exposure 1.1, Foveation 1 */}
       <Canvas
         style={{ width: '100%', height: '100%', touchAction: 'none' }}
         camera={{ fov: 60, near: 0.1, far: 500, position: [0, 1.6, -8], rotation: [0, Math.PI, 0] }}
         shadows={{ enabled: true, type: THREE.PCFSoftShadowMap }}
         dpr={[1, 2]}
-        gl={{ 
+        gl={{
           antialias: true,
           alpha: false,
-          powerPreference: 'high-performance',
-          preserveDrawingBuffer: true
+          powerPreference: 'high-performance'
         }}
         onCreated={({ gl }: { gl: THREE.WebGLRenderer }) => {
-          gl.setClearColor(0x9DB4C4);
+          // Kino-Look: ACES-Filmic-Tonemapping, dezente Exposure
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.1;
+          // Starkes Foveation für Standstill-Experience (Budget-Regel 6)
+          gl.xr.setFoveation(1);
+          gl.setClearColor(0xD8C4A0);
         }}
       >
         <XR store={store}>
           {/* Official VR locomotion using react-three/xr hook */}
           <LocomotionController />
-          
+
           {/* Game UI - inside Canvas for useThree hook */}
           <GameStateManager />
 
           {/* Mirror XR session state into the zustand store for DOM overlays */}
           <XRSessionSync />
-          
+
           <Scene />
+
+          {/* Bloom + Vignette nur ausserhalb XR */}
+          <PostFX />
         </XR>
       </Canvas>
 
@@ -284,6 +309,11 @@ function isBlocked(x: number, z: number): boolean {
 }
 
 const PITCH_LIMIT = THREE.MathUtils.degToRad(85);
+
+// Wiederverwendbare Vektoren (KEINE Allokation pro Frame, Budget-Regel)
+const _dir = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 // Official VR Locomotion using useXRControllerLocomotion hook from react-three/xr v6
 // This hook handles all the XR controller input and locomotion logic
@@ -454,21 +484,19 @@ function LocomotionController() {
     }
 
     if (magnitude > 0.1) {
-      // Get camera direction
-      const cameraDirection = new THREE.Vector3();
-      camera.getWorldDirection(cameraDirection);
-      cameraDirection.y = 0;
-      cameraDirection.normalize();
+      // Get camera direction (Modul-Konstanten wiederverwendet — nichts pro Frame)
+      camera.getWorldDirection(_dir);
+      _dir.y = 0;
+      _dir.normalize();
 
-      const right = new THREE.Vector3();
-      right.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
+      _right.crossVectors(_dir, _up).normalize();
 
       // Analog speed: full keyboard input = magnitude 1, partial joystick = slower
       const speed = magnitude * 3.0;
       const deltaX =
-        cameraDirection.x * -moveZ * speed * delta + right.x * moveX * speed * delta;
+        _dir.x * -moveZ * speed * delta + _right.x * moveX * speed * delta;
       const deltaZ =
-        cameraDirection.z * -moveZ * speed * delta + right.z * moveX * speed * delta;
+        _dir.z * -moveZ * speed * delta + _right.z * moveX * speed * delta;
 
       if (session) {
         // XR: move the XROrigin group

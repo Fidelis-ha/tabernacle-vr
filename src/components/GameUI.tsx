@@ -1,19 +1,28 @@
-import { useEffect, useCallback } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useEffect, useCallback, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { create } from 'zustand';
 
-// Audio context for ambient sounds
+// === AUDIO (SPEC aaa: raeumliches Audio + Musikschicht, alles prozedural) ===
+// - Altarfeuer: Noise-Buffer + Bandpass (LFO) ueber PannerNode an (0, 1.4, 27)
+// - Menora-Flackern: leises gefiltertes Rauschen an (-1.1, 1, 36)
+// - Wind-Loop: global, StereoPanner mit langsamer Richtungsmodulation
+// - Musik: 2-3 detunierte Sinus-Oszillatoren + Lowpass + LFO, -24 dB unter Ambient
+// - Slider-Regler steuern die GainNodes (Set aus v1 beibehalten)
+
 let audioContext: AudioContext | null = null;
 let masterGainNode: GainNode | null = null;
 let ambientGainNode: GainNode | null = null;
 let fireGainNode: GainNode | null = null;
 let windGainNode: GainNode | null = null;
+let musicGainNode: GainNode | null = null;
 
 export interface AudioSettings {
   master: number;
   ambient: number;
   fire: number;
   wind: number;
+  music: number;
 }
 
 const defaultSettings: AudioSettings = {
@@ -21,9 +30,53 @@ const defaultSettings: AudioSettings = {
   ambient: 0.4,
   fire: 0.6,
   wind: 0.2,
+  music: 0.35,
 };
 
-// Simple audio generation (no external files needed)
+// Loopender Rausch-Buffer (2 s weisses Rauschen, prozedural erzeugt)
+function createNoiseSource(context: AudioContext): AudioBufferSourceNode {
+  const length = context.sampleRate * 2;
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const src = context.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  return src;
+}
+
+// PannerNode an eine Weltposition (equalpower: XR-tauglich guenstig)
+function createPanner(context: AudioContext, pos: [number, number, number]): PannerNode {
+  const panner = context.createPanner();
+  panner.panningModel = 'equalpower';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 2;
+  panner.maxDistance = 60;
+  panner.rolloffFactor = 1.2;
+  if (panner.positionX) {
+    panner.positionX.value = pos[0];
+    panner.positionY.value = pos[1];
+    panner.positionZ.value = pos[2];
+  } else {
+    panner.setPosition(pos[0], pos[1], pos[2]);
+  }
+  return panner;
+}
+
+// LFO auf einen AudioParam
+function connectLFO(context: AudioContext, param: AudioParam, freq: number, depth: number) {
+  const lfo = context.createOscillator();
+  const lfoGain = context.createGain();
+  lfo.frequency.value = freq;
+  lfoGain.gain.value = depth;
+  lfo.connect(lfoGain);
+  lfoGain.connect(param);
+  lfo.start();
+}
+
+// Dezente Ambient-Toene (v1-Set beibehalten)
 function createAmbientTone(context: AudioContext, freq: number, gain: GainNode, type: OscillatorType = 'sine') {
   const osc = context.createOscillator();
   const filter = context.createBiquadFilter();
@@ -47,8 +100,34 @@ function createAmbientTone(context: AudioContext, freq: number, gain: GainNode, 
   lfo.connect(lfoGain);
   lfoGain.connect(osc.frequency);
   lfo.start();
+}
 
-  return { osc, filter, lfo };
+// Prozedurale Musikschicht: 2-3 detunierte Sinus-Oszillatoren + Lowpass +
+// sehr langsame LFO-Modulation (ruhig, sakral, kein Track/Download)
+function createMusicLayer(context: AudioContext, gain: GainNode) {
+  const filter = context.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 650;
+  filter.Q.value = 0.7;
+
+  const padGain = context.createGain();
+  padGain.gain.value = 0.5;
+  filter.connect(padGain);
+  padGain.connect(gain);
+
+  // sehr langsame Amplitudenmodulation (Atmen)
+  connectLFO(context, padGain.gain, 0.02, 0.22);
+
+  for (const freq of [110.2, 220, 220.9]) {
+    const osc = context.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const oscGain = context.createGain();
+    oscGain.gain.value = 0.16;
+    osc.connect(oscGain);
+    oscGain.connect(filter);
+    osc.start();
+  }
 }
 
 function initAudio(settings: AudioSettings) {
@@ -56,30 +135,106 @@ function initAudio(settings: AudioSettings) {
 
   try {
     audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    masterGainNode = audioContext.createGain();
-    masterGainNode.gain.value = settings.master;
-    masterGainNode.connect(audioContext.destination);
+    const ctx = audioContext;
 
-    ambientGainNode = audioContext.createGain();
+    masterGainNode = ctx.createGain();
+    masterGainNode.gain.value = settings.master;
+    masterGainNode.connect(ctx.destination);
+
+    ambientGainNode = ctx.createGain();
     ambientGainNode.gain.value = settings.ambient;
     ambientGainNode.connect(masterGainNode);
 
-    fireGainNode = audioContext.createGain();
+    fireGainNode = ctx.createGain();
     fireGainNode.gain.value = settings.fire;
     fireGainNode.connect(masterGainNode);
 
-    windGainNode = audioContext.createGain();
+    windGainNode = ctx.createGain();
     windGainNode.gain.value = settings.wind;
     windGainNode.connect(masterGainNode);
 
-    createAmbientTone(audioContext, 80, ambientGainNode, 'sawtooth');
-    createAmbientTone(audioContext, 120, ambientGainNode, 'sine');
-    createAmbientTone(audioContext, 200, fireGainNode, 'square');
-    createAmbientTone(audioContext, 350, fireGainNode, 'sawtooth');
-    createAmbientTone(audioContext, 60, windGainNode, 'sine');
-    createAmbientTone(audioContext, 90, windGainNode, 'triangle');
+    musicGainNode = ctx.createGain();
+    musicGainNode.gain.value = settings.music * 0.12; // ca. -24 dB unter Ambient
+    musicGainNode.connect(masterGainNode);
+
+    // Ambient
+    createAmbientTone(ctx, 80, ambientGainNode, 'sawtooth');
+    createAmbientTone(ctx, 120, ambientGainNode, 'sine');
+
+    // Altarfeuer (z = 27): Noise + Bandpass mit LFO, raeumlich ueber Panner
+    const fireNoise = createNoiseSource(ctx);
+    const fireBand = ctx.createBiquadFilter();
+    fireBand.type = 'bandpass';
+    fireBand.frequency.value = 700;
+    fireBand.Q.value = 1.1;
+    connectLFO(ctx, fireBand.frequency, 0.35, 320);
+    const firePanner = createPanner(ctx, [0, 1.4, 27]);
+    fireNoise.connect(fireBand);
+    fireBand.connect(firePanner);
+    firePanner.connect(fireGainNode);
+    fireNoise.start();
+
+    // Menora-Flackern (z = 36), leise
+    const menoraNoise = createNoiseSource(ctx);
+    const menoraBand = ctx.createBiquadFilter();
+    menoraBand.type = 'bandpass';
+    menoraBand.frequency.value = 2600;
+    menoraBand.Q.value = 4;
+    connectLFO(ctx, menoraBand.frequency, 0.8, 700);
+    const menoraGain = ctx.createGain();
+    menoraGain.gain.value = 0.05;
+    const menoraPanner = createPanner(ctx, [-1.1, 1, 36]);
+    menoraNoise.connect(menoraBand);
+    menoraBand.connect(menoraGain);
+    menoraGain.connect(menoraPanner);
+    menoraPanner.connect(fireGainNode);
+    menoraNoise.start();
+
+    // Wind: global, Richtungsmodulation ueber StereoPanner
+    const windNoise = createNoiseSource(ctx);
+    const windLow = ctx.createBiquadFilter();
+    windLow.type = 'lowpass';
+    windLow.frequency.value = 350;
+    connectLFO(ctx, windLow.frequency, 0.06, 180);
+    const windStereo = ctx.createStereoPanner();
+    connectLFO(ctx, windStereo.pan, 0.045, 0.6);
+    windNoise.connect(windLow);
+    windLow.connect(windStereo);
+    windStereo.connect(windGainNode);
+    windNoise.start();
+
+    // Musikschicht
+    createMusicLayer(ctx, musicGainNode);
   } catch (e) {
     console.warn('Audio not available:', e);
+  }
+}
+
+// Listener folgt der Kamera (sparsam, ~10 Hz aus GameStateManager).
+// WICHTIG: getWorldPosition/getWorldDirection statt camera.position —
+// korrekt in UND ausserhalb XR (WebXRManager treibt matrixWorld).
+const _forward = new THREE.Vector3();
+const _listenerPos = new THREE.Vector3();
+export function updateAudioListener(camera: THREE.Camera) {
+  if (!audioContext || audioContext.state !== 'running') return;
+  const l = audioContext.listener;
+  camera.getWorldPosition(_listenerPos);
+  camera.getWorldDirection(_forward);
+  const p = _listenerPos;
+  if (l.positionX) {
+    const t = audioContext.currentTime;
+    l.positionX.setTargetAtTime(p.x, t, 0.05);
+    l.positionY.setTargetAtTime(p.y, t, 0.05);
+    l.positionZ.setTargetAtTime(p.z, t, 0.05);
+    l.forwardX.setTargetAtTime(_forward.x, t, 0.05);
+    l.forwardY.setTargetAtTime(_forward.y, t, 0.05);
+    l.forwardZ.setTargetAtTime(_forward.z, t, 0.05);
+    l.upX.setTargetAtTime(0, t, 0.05);
+    l.upY.setTargetAtTime(1, t, 0.05);
+    l.upZ.setTargetAtTime(0, t, 0.05);
+  } else {
+    l.setPosition(p.x, p.y, p.z);
+    l.setOrientation(_forward.x, _forward.y, _forward.z, 0, 1, 0);
   }
 }
 
@@ -99,6 +254,19 @@ interface GameStore {
   restart: () => void;
 }
 
+// Audio beim ersten User-Gesture starten (Canvas-pointerdown, VR-Button,
+// Pause-Menue) — nicht nur ueber togglePause
+export function ensureAudioStarted() {
+  const { audioStarted, settings } = useGameStore.getState();
+  if (!audioStarted) {
+    initAudio(settings);
+    useGameStore.setState({ audioStarted: true });
+  }
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   isPaused: false,
   audioStarted: false,
@@ -108,12 +276,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   moveInput: { x: 0, z: 0 },
   xrActive: false,
   togglePause: () => {
-    const { audioStarted, settings, isPaused } = get();
-    if (!audioStarted) {
-      initAudio(settings);
-      set({ audioStarted: true });
-    }
-    set({ isPaused: !isPaused });
+    ensureAudioStarted();
+    set({ isPaused: !get().isPaused });
   },
   setSettings: (settings) => set({ settings }),
   setMoveInput: (moveInput) => set({ moveInput }),
@@ -129,12 +293,17 @@ export function GameUI() {
   const setSettings = useGameStore((s) => s.setSettings);
   const settings = useGameStore((s) => s.settings);
 
-  // Write slider values to the audio GainNodes
+  // Write slider values to the audio GainNodes (setTargetAtTime gegen
+  // Zipper-Noise bei schnellen Slider-Bewegungen)
   useEffect(() => {
-    if (masterGainNode) masterGainNode.gain.value = settings.master;
-    if (ambientGainNode) ambientGainNode.gain.value = settings.ambient;
-    if (fireGainNode) fireGainNode.gain.value = settings.fire;
-    if (windGainNode) windGainNode.gain.value = settings.wind;
+    if (audioContext) {
+      const t = audioContext.currentTime;
+      if (masterGainNode) masterGainNode.gain.setTargetAtTime(settings.master, t, 0.05);
+      if (ambientGainNode) ambientGainNode.gain.setTargetAtTime(settings.ambient, t, 0.05);
+      if (fireGainNode) fireGainNode.gain.setTargetAtTime(settings.fire, t, 0.05);
+      if (windGainNode) windGainNode.gain.setTargetAtTime(settings.wind, t, 0.05);
+      if (musicGainNode) musicGainNode.gain.setTargetAtTime(settings.music * 0.12, t, 0.05);
+    }
   }, [settings]);
 
   if (!isPaused) {
@@ -237,6 +406,17 @@ export function GameUI() {
               style={{ width: '100%', marginLeft: '10px' }}
             />
           </label>
+          <label style={{ display: 'block', margin: '8px 0', fontSize: '12px' }}>
+            🎶 Musik: {Math.round(settings.music * 100)}%
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={settings.music * 100}
+              onChange={(e) => setSettings({ ...settings, music: Number(e.target.value) / 100 })}
+              style={{ width: '100%', marginLeft: '10px' }}
+            />
+          </label>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '20px' }}>
@@ -277,10 +457,27 @@ export function GameUI() {
 
 // Game state manager - inside Canvas so useThree works
 export function GameStateManager() {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const togglePause = useGameStore((s) => s.togglePause);
   const restartToken = useGameStore((s) => s.restartToken);
   const resetPosition = useGameStore((s) => s.resetPosition);
+  const lastListenerUpdate = useRef(0);
+
+  // Audio-Init beim ersten Canvas-pointerdown (User-Gesture-Policy der Browser)
+  useEffect(() => {
+    const el = gl.domElement;
+    const onFirstPointerDown = () => ensureAudioStarted();
+    el.addEventListener('pointerdown', onFirstPointerDown);
+    return () => el.removeEventListener('pointerdown', onFirstPointerDown);
+  }, [gl]);
+
+  // Audio-Listener folgt der Kamera, sparsam (~10 Hz)
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (t - lastListenerUpdate.current < 0.1) return;
+    lastListenerUpdate.current = t;
+    updateAudioListener(camera);
+  });
 
   // Desktop reset to start position: outside the gate, z = -8, looking west
   // (XR reset happens in LocomotionController via the XROrigin ref)
