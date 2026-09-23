@@ -471,6 +471,14 @@ export function GameStateManager() {
     return () => el.removeEventListener('pointerdown', onFirstPointerDown);
   }, [gl]);
 
+  // Audio-Init auch bei reinem Tastatur-Start (WASD ohne Klick ist
+  // ebenfalls eine User-Gesture, die ein AudioContext.resume() erlaubt)
+  useEffect(() => {
+    const onFirstKeyDown = () => ensureAudioStarted();
+    window.addEventListener('keydown', onFirstKeyDown);
+    return () => window.removeEventListener('keydown', onFirstKeyDown);
+  }, []);
+
   // Audio-Listener folgt der Kamera, sparsam (~10 Hz)
   useFrame((state) => {
     const t = state.clock.elapsedTime;

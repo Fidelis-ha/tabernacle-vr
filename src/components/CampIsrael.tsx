@@ -59,11 +59,13 @@ function generateTents(): { cones: TentSpec[]; prisms: TentSpec[]; striped: Tent
 }
 
 // Kegel/Prismen sind zentriert: y = halbe Hoehe * Scale, damit nichts im
-// Boden versinkt (Kegel 2,2m -> 1,1, Prisma 1,9m -> 0,95)
+// Boden versinkt. Kegel: ConeGeometry(1.6, 1.5, 7) -> half 0.75.
+// Prismen: nicht-uniform skaliert ([1.5, 0.62, 1.0] * scale, 45 Grad gedreht,
+// Firstel-Zelt-Look) -> effektive Hoehe 1.9 * 0.62 = 1.178 -> half 0.59.
 function toTransforms(
   list: TentSpec[],
   halfHeight: number
-): { position: Vec3; rotation: Vec3; scale: number }[] {
+): { position: Vec3; rotation: Vec3; scale: Vec3 | number }[] {
   return list.map((t) => ({
     position: [t.x, halfHeight * t.scale, t.z],
     rotation: [0, t.rotY, 0],
@@ -71,13 +73,25 @@ function toTransforms(
   }));
 }
 
+// Prismen-Variante: Firstel-Zelte (breit/flach, um 45 Grad gedreht)
+function toPrismTransforms(
+  list: TentSpec[],
+  halfHeight: number
+): { position: Vec3; rotation: Vec3; scale: Vec3 }[] {
+  return list.map((t) => ({
+    position: [t.x, halfHeight * t.scale, t.z],
+    rotation: [0, t.rotY + Math.PI / 4, 0],
+    scale: [1.5 * t.scale, 0.62 * t.scale, 1.0 * t.scale],
+  }));
+}
+
 // Modul-Geometrien (Budget-Regel 8)
-const coneGeo = new THREE.ConeGeometry(1.3, 2.2, 7);
+const coneGeo = new THREE.ConeGeometry(1.6, 1.5, 7);
 const prismGeo = new THREE.ConeGeometry(1.4, 1.9, 4);
 
 // Gedeckte Stofffarben (Sand/Braun/Graubeige)
 const tentSandMat = new THREE.MeshLambertMaterial({ color: 0xA89068 });
-const tentBrownMat = new THREE.MeshLambertMaterial({ color: 0x7A5C40 });
+const tentBrownMat = new THREE.MeshLambertMaterial({ color: 0x9A7A58 });
 const tentStripeMat = new THREE.MeshLambertMaterial({ map: tentStripeTexture });
 
 // 5 Rauchpositionen bei Zeltgruppen
@@ -103,21 +117,21 @@ export function CampIsrael() {
       const phase = (t * 0.12 + i * 0.31) % 1;
       s.position.y = 0.6 + phase * 3.4;
       s.position.x = SMOKE_POSITIONS[i][0] + Math.sin(t * 0.25 + i * 1.7) * 0.5;
-      s.material.opacity = 0.26 * Math.sin(phase * Math.PI);
+      s.material.opacity = 0.42 * Math.sin(phase * Math.PI);
     }
   });
 
   return (
     <group>
       {/* Zelte: 3 InstancedMeshes (Kegel, Prismen, gestreift) */}
-      <Instanced geometry={coneGeo} material={tentSandMat} transforms={useMemo(() => toTransforms(tents.cones, 1.1), [tents])} />
-      <Instanced geometry={prismGeo} material={tentBrownMat} transforms={useMemo(() => toTransforms(tents.prisms, 0.95), [tents])} />
-      <Instanced geometry={coneGeo} material={tentStripeMat} transforms={useMemo(() => toTransforms(tents.striped, 1.1), [tents])} />
+      <Instanced geometry={coneGeo} material={tentSandMat} transforms={useMemo(() => toTransforms(tents.cones, 0.75), [tents])} />
+      <Instanced geometry={prismGeo} material={tentBrownMat} transforms={useMemo(() => toPrismTransforms(tents.prisms, 0.59), [tents])} />
+      <Instanced geometry={coneGeo} material={tentStripeMat} transforms={useMemo(() => toTransforms(tents.striped, 0.75), [tents])} />
 
       {/* 5 Rauchsäulen — eigenes Material pro Sprite (Opacity animiert) */}
       <group ref={smokeGroup}>
         {SMOKE_POSITIONS.map((p, i) => (
-          <sprite key={`smoke-${i}`} position={p} scale={[1.6, 2.2, 1]}>
+          <sprite key={`smoke-${i}`} position={p} scale={[2.4, 3.6, 1]}>
             <spriteMaterial
               map={smokeTexture}
               transparent

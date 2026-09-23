@@ -1,6 +1,6 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Sky, Sparkles, Environment } from '@react-three/drei';
 import { ALTAR_Z } from './TabernacleFloor';
 import { cloudTexture, envGradientTexture } from '../utils/textures';
@@ -60,10 +60,11 @@ function Clouds() {
             <spriteMaterial
               map={cloudTexture}
               transparent
-              opacity={0.4 + (i % 3) * 0.075}
+              opacity={0.55 + (i % 3) * 0.1}
               rotation={(i * 1.37) % Math.PI}
               depthWrite={false}
               fog={false}
+              color="#F2E6CE"
             />
           </sprite>
         );
@@ -100,17 +101,30 @@ function Dunes() {
   );
 }
 
+// Debug-Kamera-Hook: ?debugcam=1 haengt camera+scene an window (Verifikation/Tests).
+function DebugCamHook() {
+  const { camera, scene } = useThree();
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('debugcam') === '1') {
+      (window as unknown as Record<string, unknown>).__CAMERA = camera;
+      (window as unknown as Record<string, unknown>).__SCENE = scene;
+    }
+  }, [camera, scene]);
+  return null;
+}
+
 export function Scene() {
   return (
     <group>
+      <DebugCamHook />
       {/* === WÜSTENHIMMEL (Preetham-Sky, sonniger staubiger Nachmittag) === */}
       <Sky
         distance={400}
         sunPosition={SUN_DIRECTION}
-        turbidity={9}
-        rayleigh={2.2}
-        mieCoefficient={0.006}
-        mieDirectionalG={0.85}
+        turbidity={5}
+        rayleigh={1.6}
+        mieCoefficient={0.002}
+        mieDirectionalG={0.75}
       />
 
       {/* === WARMES STAUBIGES NEBELN an der Diorama-Horizontlinie === */}
@@ -125,7 +139,7 @@ export function Scene() {
         </mesh>
         <mesh position={SUN_DIRECTION} scale={7}>
           <sphereGeometry args={[1, 8, 8]} />
-          <meshBasicMaterial color={[3, 2.6, 2]} />
+          <meshBasicMaterial color={[1.7, 1.45, 1.1]} />
         </mesh>
       </Environment>
 
@@ -144,7 +158,7 @@ export function Scene() {
         position={[0, 2, 15]}
         size={2}
         speed={0.15}
-        opacity={0.16}
+        opacity={0.1}
         color="#E8DCC8"
         noise={0.5}
       />

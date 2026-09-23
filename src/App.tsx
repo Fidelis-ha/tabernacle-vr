@@ -19,7 +19,7 @@ function PostFX() {
   if (session) return null;
   return (
     <EffectComposer multisampling={0}>
-      <Bloom luminanceThreshold={0.75} luminanceSmoothing={0.25} intensity={0.55} mipmapBlur />
+      <Bloom luminanceThreshold={0.85} luminanceSmoothing={0.25} intensity={0.4} mipmapBlur />
       <Vignette offset={0.25} darkness={0.55} />
     </EffectComposer>
   );
@@ -258,7 +258,9 @@ export default function App() {
       {/* Instructions - adaptive per device, hidden while an XR session is active */}
       <div style={{
         position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-        color: '#888', fontSize: '14px', fontFamily: 'monospace', zIndex: 999,
+        color: '#C9A84C', fontSize: '14px', fontFamily: 'Georgia, serif',
+        background: 'rgba(0, 0, 0, 0.45)', borderRadius: '8px', padding: '6px 14px',
+        zIndex: 999,
         textAlign: 'center', whiteSpace: 'nowrap'
       }}>
         {xrActive

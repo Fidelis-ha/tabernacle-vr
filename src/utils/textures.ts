@@ -61,19 +61,19 @@ function makeSand(): THREE.CanvasTexture {
 // --- Feste Erde (Vorhof-Boden) ---
 function makeEarth(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  grain(ctx, 256, [139, 115, 85], 26);
-  // Tretspuren / Flecken
+  grain(ctx, 256, [139, 115, 85], 34);
+  // Tretspuren / Flecken — fein und dezent (kein Pflaster-Raster in der Distanz)
   for (let i = 0; i < 45; i++) {
-    ctx.fillStyle = `rgba(90,70,48,${0.06 + Math.random() * 0.1})`;
+    ctx.fillStyle = `rgba(90,70,48,${0.04 + Math.random() * 0.05})`;
     ctx.beginPath();
     ctx.ellipse(
       Math.random() * 256, Math.random() * 256,
-      8 + Math.random() * 30, 5 + Math.random() * 18,
+      4 + Math.random() * 10, 3 + Math.random() * 7,
       Math.random() * Math.PI, 0, Math.PI * 2
     );
     ctx.fill();
   }
-  return toTexture(c, 10, 10);
+  return toTexture(c, 16, 16);
 }
 
 // --- Leinen / Byssus: feines Webmuster ---
@@ -160,7 +160,7 @@ function makeCloud(): THREE.CanvasTexture {
     const y = 100 + Math.random() * 56;
     const r = 26 + Math.random() * 46;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, 'rgba(255,250,240,0.34)');
+    g.addColorStop(0, 'rgba(255,250,240,0.6)');
     g.addColorStop(1, 'rgba(255,250,240,0)');
     ctx.fillStyle = g;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
@@ -194,8 +194,8 @@ function makeSmoke(): THREE.CanvasTexture {
     [78, 56, 28, 0.3],
   ] as const) {
     const g = ctx.createRadialGradient(dx, dy, 0, dx, dy, r);
-    g.addColorStop(0, `rgba(196,190,180,${a})`);
-    g.addColorStop(1, 'rgba(196,190,180,0)');
+    g.addColorStop(0, `rgba(130,122,112,${a})`);
+    g.addColorStop(1, 'rgba(130,122,112,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
   }
@@ -257,17 +257,19 @@ function makeGate(): THREE.CanvasTexture {
     ctx.fillStyle = 'rgba(255,255,255,0.05)';
     ctx.fillRect(0, y, 256, 1);
   }
-  // Goldfaeden als Wirkerei: feine vertikale + horizontale Goldlinien
+  // Goldfaeden als Wirkerei: dicke, kontrastreiche vertikale + horizontale
+  // Goldlinien (2-3 px), damit die Wirkerei auch auf Distanz lesbar bleibt
   for (let x = 6; x < 256; x += 14) {
-    ctx.fillStyle = 'rgba(212,175,55,0.28)';
-    ctx.fillRect(x, 0, 1, 256);
+    ctx.fillStyle = 'rgba(212,175,55,0.42)';
+    ctx.fillRect(x, 0, 2, 256);
   }
   for (let y = 10; y < 256; y += 22) {
-    ctx.fillStyle = 'rgba(212,175,55,0.18)';
-    ctx.fillRect(0, y, 256, 1);
+    ctx.fillStyle = 'rgba(212,175,55,0.3)';
+    ctx.fillRect(0, y, 256, 3);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
   return t;
 }
 

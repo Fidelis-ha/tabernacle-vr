@@ -42,6 +42,9 @@ const ropeGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5);
 const altarHornGeo = new THREE.ConeGeometry(0.09, 0.3, 8);        // Altar-Hoerner
 const altarRingGeo = new THREE.TorusGeometry(0.07, 0.02, 6, 12);  // Altar-Ringe
 const grateBarGeo = new THREE.BoxGeometry(5 * CUBIT - 0.1, 0.03, 0.03); // Rostbalken
+const fireConeGeoL = new THREE.ConeGeometry(0.45, 0.85, 8); // Altarfeuer-Kegel (3 Groessen)
+const fireConeGeoM = new THREE.ConeGeometry(0.3, 0.55, 8);
+const fireConeGeoS = new THREE.ConeGeometry(0.26, 0.45, 8);
 
 // Tor-Plane: leicht gewellt (8 Segmente, Sinus z +-0,03) — wirkt wie Stoff
 const gateGeo = (() => {
@@ -290,15 +293,9 @@ function BronzeAltar({ position }: { position: Vec3 }) {
 
       {/* Feuer auf dem Gitter - 3 überlappende Kegel, EIN geteiltes
           FLAME-Material, animiert (y-Scale +-15%, Phasen versetzt) */}
-      <mesh ref={setFireRef(0)} position={[0, height * 0.5 + 0.35, 0]}>
-        <coneGeometry args={[0.45, 0.85, 8]} />
-      </mesh>
-      <mesh ref={setFireRef(1)} position={[0.18, height * 0.5 + 0.22, 0.1]} rotation={[0.12, 0, -0.15]}>
-        <coneGeometry args={[0.3, 0.55, 8]} />
-      </mesh>
-      <mesh ref={setFireRef(2)} position={[-0.15, height * 0.5 + 0.18, -0.12]} rotation={[-0.1, 0, 0.18]}>
-        <coneGeometry args={[0.26, 0.45, 8]} />
-      </mesh>
+      <mesh ref={setFireRef(0)} position={[0, height * 0.5 + 0.35, 0]} geometry={fireConeGeoL} material={FLAME} />
+      <mesh ref={setFireRef(1)} position={[0.18, height * 0.5 + 0.22, 0.1]} rotation={[0.12, 0, -0.15]} geometry={fireConeGeoM} material={FLAME} />
+      <mesh ref={setFireRef(2)} position={[-0.15, height * 0.5 + 0.18, -0.12]} rotation={[-0.1, 0, 0.18]} geometry={fireConeGeoS} material={FLAME} />
 
       {/* Feuerschwingen übernimmt das flackernde Licht in TabernacleLighting */}
 
@@ -339,8 +336,8 @@ function BronzeBasin({ position }: { position: Vec3 }) {
         <cylinderGeometry args={[0.74, 0.6, 0.12, 16]} />
       </mesh>
 
-      {/* Beckenrand */}
-      <mesh position={[0, 1.51, 0]} material={BRONZE}>
+      {/* Beckenrand — Torus flach gelegt (XY-Ebene -> XZ), y = Oberkante Becken */}
+      <mesh position={[0, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]} material={BRONZE}>
         <torusGeometry args={[0.79, 0.035, 8, 24]} />
       </mesh>
     </group>

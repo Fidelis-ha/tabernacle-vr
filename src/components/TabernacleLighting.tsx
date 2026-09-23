@@ -15,12 +15,21 @@ import { glowTexture, godRayTexture } from '../utils/textures';
 // Sonnenrichtung: sued-westliche Nachmittagssonne, ~20 Grad Elevation
 // (-x = sued, +z = west) — EINE geteilte Konstante fuer Sky, DirectionalLight
 // und Env-Sonne (Scene.tsx importiert sie)
-export const SUN_DIRECTION: [number, number, number] = [-30, 14, 24];
+export const SUN_DIRECTION: [number, number, number] = [-34, 16, 18];
 const COURTYARD_CENTER: [number, number, number] = [0, 0, 22.5];
 
 export function TabernacleLighting() {
   const sunRef = useRef<THREE.DirectionalLight>(null);
+  const shekinahRef = useRef<THREE.Sprite>(null);
   const { scene } = useThree();
+
+  // Schekinah "atmet": Opacity pulsiert langsam (keine Allokation pro Frame)
+  useFrame((state) => {
+    const s = shekinahRef.current;
+    if (!s) return;
+    (s.material as THREE.SpriteMaterial).opacity =
+      0.45 + 0.12 * Math.sin(state.clock.elapsedTime * 0.5);
+  });
 
   // Schatten-Frustum der Sonne um die Vorhof-Mitte zentrieren
   useEffect(() => {
@@ -75,7 +84,7 @@ export function TabernacleLighting() {
 
       {/* Schekinah-Glow-Sprite über der Lade (additiv, Canvas-Radialgradient) —
           dezent dimensioniert (kein Lens-Flare-Eindruck) */}
-      <sprite position={[0, 2.9, HOLY_OF_HOLIES_Z_CENTER]} scale={[1.9, 1.9, 1]}>
+      <sprite ref={shekinahRef} position={[0, 2.9, HOLY_OF_HOLIES_Z_CENTER]} scale={[1.9, 1.9, 1]}>
         <spriteMaterial
           map={glowTexture}
           transparent
@@ -93,7 +102,7 @@ export function TabernacleLighting() {
         <meshBasicMaterial
           map={godRayTexture}
           transparent
-          opacity={0.4}
+          opacity={0.22}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
@@ -104,7 +113,7 @@ export function TabernacleLighting() {
         <meshBasicMaterial
           map={godRayTexture}
           transparent
-          opacity={0.3}
+          opacity={0.16}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}

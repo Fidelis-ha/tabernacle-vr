@@ -20,17 +20,17 @@ import {
 // Gemeinsames Flammen-Material (Menora-Laemmchen + Altarfeuer-Kegel):
 // EINE geteilte emissive Instanz statt 7+ identischer Duplikate
 export const FLAME = new THREE.MeshStandardMaterial({
-  color: 0xFFDD44,
+  color: 0xFF9933,
   emissive: 0xFFAA00,
-  emissiveIntensity: 3,
+  emissiveIntensity: 2.2,
 });
 
 // Gold - hochreflektierend, PBR-plain mit envMap (KEINE Textur)
 export const GOLD = new THREE.MeshStandardMaterial({
   color: 0xD4AF37,
   metalness: 1.0,
-  roughness: 0.1,
-  envMapIntensity: 1.5,
+  roughness: 0.18,
+  envMapIntensity: 1.0,
 });
 
 // Bronze/Kupfer mit Patina

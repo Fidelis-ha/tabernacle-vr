@@ -61,6 +61,9 @@ const cornerRingGeo = new THREE.TorusGeometry(0.035, 0.01, 6, 12);          // T
 const incenseHornGeo = new THREE.ConeGeometry(0.045, 0.16, 8);              // Raeuchar-Hoerner
 const incenseRingGeo = new THREE.TorusGeometry(0.045, 0.012, 6, 12);        // Raeuchar-Ringe
 const flameConeGeo = new THREE.ConeGeometry(0.018, 0.06, 6);                // Menora-Flaemmchen
+const lampGeo = new THREE.CylinderGeometry(0.04, 0.028, 0.06, 8);           // 7 Oellämpchen-Schalen
+const knopGeo = new THREE.SphereGeometry(0.028, 8, 8);                      // Mandelblüten-Knauf (Schaft)
+const knopGeoSmall = new THREE.SphereGeometry(0.02, 8, 8);                  // Mandelblüten-Knauf (Arme)
 
 export function HolyPlace() {
   return (
@@ -314,9 +317,7 @@ function Menora({ position }: { position: Vec3 }) {
 
       {/* Mandelblüten-Knäufe am Schaft */}
       {[0.3, 0.55, 0.8].map((y, i) => (
-        <mesh key={`knop-${i}`} position={[0, y, 0]} material={GOLD}>
-          <sphereGeometry args={[0.028, 8, 8]} />
-        </mesh>
+        <mesh key={`knop-${i}`} position={[0, y, 0]} geometry={knopGeo} material={GOLD} />
       ))}
 
       {/* 3 Paar gebogener Arme (CatmullRom-Schwünge) */}
@@ -335,9 +336,7 @@ function Menora({ position }: { position: Vec3 }) {
                 ]}
               />
               {/* Blütenknauf am Schwung */}
-              <mesh position={[side * p.lampX * 0.55, (p.elbowY + midY) / 2, 0]} material={GOLD}>
-                <sphereGeometry args={[0.02, 8, 8]} />
-              </mesh>
+              <mesh position={[side * p.lampX * 0.55, (p.elbowY + midY) / 2, 0]} geometry={knopGeoSmall} material={GOLD} />
             </group>
           );
         })
@@ -346,9 +345,7 @@ function Menora({ position }: { position: Vec3 }) {
       {/* 7 Lämpchen (Schalen) mit Flammen — EIN geteiltes FLAME-Material */}
       {[0, ...pairs.map((p) => p.lampX * -1), ...pairs.map((p) => p.lampX)].map((x, i) => (
         <group key={`lamp-${i}`} position={[x, lampY, 0]}>
-          <mesh material={GOLD}>
-            <cylinderGeometry args={[0.04, 0.028, 0.06, 8]} />
-          </mesh>
+          <mesh geometry={lampGeo} material={GOLD} />
           <mesh
             ref={(m) => { flameRefs.current[i] = m; }}
             position={[0, 0.06, 0]}
