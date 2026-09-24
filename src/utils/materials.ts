@@ -3,7 +3,6 @@ import {
   sandTexture,
   earthTexture,
   linenTexture,
-  goatHairTexture,
   woodTexture,
   gateTexture,
   veilTexture,
@@ -13,7 +12,18 @@ import {
   goldRoughTexture,
   breadTexture,
   bronzeTexture,
+  weaveColorTexture,
+  weaveNormalTexture,
+  burlapColorTexture,
+  burlapNormalTexture,
 } from './textures';
+
+// SPEC-perf-stoffe C1 — Antik-Palette (Ex 26,31): gedeckte Toene statt greller
+// Signalfarben. Texturseitige Gegenstuecke als Strings in textures.ts.
+export const ANTIQUE_BLUE = 0x2e4a78;
+export const ANTIQUE_PURPLE = 0x6b2d5b;
+export const ANTIQUE_SCARLET = 0x8e2b25;
+export const BYSSUS_TONE = 0xe8dfc8;
 
 // Material-Singletons (Budget-Regel 5): JEDES Preset genau EINE geteilte
 // Instanz auf Modulebene. Komponenten verwenden material={GOLD} statt
@@ -65,10 +75,13 @@ export const SILVER = new THREE.MeshStandardMaterial({
 });
 
 // Gezwirnter Byssus (Leinen) fuer Vorhof-Vorhaenge (Ex 27,9)
+// B: feines Gewebe (fabric-weave, CC0) als map, Antik-Ton via color-Tinting;
+// Normal-Map nur HIGH-Tier (low-Tier: null), Canvas-Leinen bleibt bumpMap.
 export const BYSSUS = new THREE.MeshStandardMaterial({
-  color: 0xFFFFFF,
+  color: BYSSUS_TONE,
   roughness: 0.85,
-  map: linenTexture,
+  map: weaveColorTexture,
+  normalMap: weaveNormalTexture,
   bumpMap: linenTexture,
   bumpScale: 0.015,
   side: THREE.DoubleSide,
@@ -82,11 +95,13 @@ export const BYSSUS_CHERUBIM = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide,
 });
 
-// Ziegenhaar - grobe Struktur, halbtransparent
+// Ziegenhaar - grober Stoff (B: fabric-burlap CC0 als map, makeGoatHair bleibt
+// onError-Fallback); Normal-Map nur HIGH-Tier. Farb-Ton via color-Tinting.
 export const GOAT_HAIR = new THREE.MeshStandardMaterial({
   color: 0xFFFFFF,
   roughness: 0.92,
-  map: goatHairTexture,
+  map: burlapColorTexture,
+  normalMap: burlapNormalTexture,
   transparent: true,
   opacity: 0.94,
   side: THREE.DoubleSide,
@@ -133,31 +148,35 @@ export const EARTH = new THREE.MeshStandardMaterial({
   bumpScale: 0.02,
 });
 
-// Tor des Vorhofs: bunt gewirkte Decke als Textur (Ex 27,16)
+// Tor des Vorhofs: bunt gewirkte Decke als Textur (Ex 27,16); C2: weiche
+// Farbverlaeufe in der Canvas-Textur + Gewebe-Normal-Map (HIGH-Tier)
 export const GATE_MAT = new THREE.MeshStandardMaterial({
   color: 0xFFFFFF,
   roughness: 0.75,
   map: gateTexture,
+  normalMap: weaveNormalTexture,
   side: THREE.DoubleSide,
 });
 
 // Parochet: 4 Farben + Cherubim-Wirkerei als Textur (Ex 26,31); B2:
-// Leinen-Basis als feine bumpMap
+// Leinen-Basis als feine bumpMap; C2: Gewebe-Normal-Map (HIGH-Tier)
 export const VEIL_MAT = new THREE.MeshStandardMaterial({
   color: 0xFFFFFF,
   roughness: 0.65,
   metalness: 0.05,
   map: veilTexture,
+  normalMap: weaveNormalTexture,
   bumpMap: linenTexture,
   bumpScale: 0.01,
   side: THREE.DoubleSide,
 });
 
-// Eingangsschirm des Heiligen (Ex 26,36)
+// Eingangsschirm des Heiligen (Ex 26,36); C2: weiche Uebergaenge + Gewebe
 export const SCREEN_MAT = new THREE.MeshStandardMaterial({
   color: 0xFFFFFF,
   roughness: 0.7,
   map: screenTexture,
+  normalMap: weaveNormalTexture,
   side: THREE.DoubleSide,
 });
 

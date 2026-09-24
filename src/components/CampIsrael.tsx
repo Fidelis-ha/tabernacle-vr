@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { COURTYARD_Z_CENTER } from './TabernacleFloor';
 import { Instanced, ropeTransform, type InstanceTransform, type Vec3 } from '../utils/instancing';
-import { goatHairTexture, smokeTexture } from '../utils/textures';
+import { burlapColorTexture, burlapNormalTexture, smokeTexture } from '../utils/textures';
 import { ROPE, ACACIA_WOOD } from '../utils/materials';
 import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 
@@ -14,8 +14,11 @@ import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 // - 2 zentrale Stuetzstangen, ragen oben leicht heraus
 // - 4 Abspannseile je Zelt (Dachkante -> Boden) mit Zeltpflock-Kegeln
 // - Dunkle Eingangs-Oeffnung an einer Giebelseite (halbtransparent dunkel)
-// - Ziegenhaar-Stoff (goatHairTexture wiederverwendet) in 3 Farbvarianten
-//   (0x9A7A58-Basis + abgedunkelt/aufgehellt) mit versetzter Naht-Textur
+// - Zeltstoff: CC0 fabric-burlap (ambientCG) in 3 Farbvarianten via color-Tinting
+//   (0xB99A76-Basis + abgedunkelt/aufgehellt); Canvas-Ziegenhaar bleibt Fallback
+// SPEC-perf-stoffe D: statische Stoff-Deformation (Sackung, Ecken-Knicke,
+// gebackene Windwelle, 3 Geometrie-Varianten) + leichte Wind-Animation via
+// onBeforeCompile (low-Tier ohne) + welliger Saum.
 // Nur 20% kleine flache Herdenzelte (Kegel r=1,8 / h=1,1).
 // 5->3 Rauchsaeulen (low-Tier). InstancedMesh, < 15 Draw Calls.
 // KEINE Menschengestalten.
@@ -71,55 +74,153 @@ function generateTents(): TentSpec[] {
 // Modul-Daten (einmalige Erzeugung, von Animals.tsx als Positions-Anker nutzbar)
 export const TENT_SPECS = generateTents();
 
-// --- Einheits-Prisma (SPEC C: Flachdach-Hauptform) ---
-// Dreiecksquerschnitt (Halbbreite 1, Firsthoehe 1), Halblaenge 1 entlang z.
-// Skalierung pro Zelt: [1,45*s, 0,7*s, 2,05*s] -> ueberstehender Ueberhang.
-function makeTentRoofGeo(): THREE.BufferGeometry {
-  const A = [-1, 0, -1], B = [1, 0, -1], C = [0, 1, -1];
-  const A2 = [-1, 0, 1], B2 = [1, 0, 1], C2 = [0, 1, 1];
-  const tris = [
-    A, C, C2,  A, C2, A2,   // linke Dachflaeche
-    B, B2, C2,  B, C2, C,   // rechte Dachflaeche
-    A, B, C,                // Giebel vorn
-    B2, A2, C2,             // Giebel hinten
-    A, A2, B2,  A, B2, B,   // Unterseite (Ueberhang von unten sichtbar)
-  ];
+// --- Einheits-Prisma (SPEC C: Flachdach-Hauptform) mit statischer
+// Stoff-Deformation (SPEC-perf-stoffe D1):
+// - 8x6 Segmente (statt 0)
+// - Sackung: Sinus-Eindellung zwischen den Stuetzstangen (z = ±0,8) sowie
+//   über die x-Achse (sin), Ueberhang haengt an den Giebeln durch
+// - Ecken-Knicke (Fabric spannt von First zu Traufe und knickt an den Ecken)
+// - eingebackene Windwelle mit zufaelliger Phase pro Variante (Instancing
+//   erlaubt keine Per-Instance-Bake — stattdessen 3 Geometrie-Varianten,
+//   abwechselnd verwendet)
+// uv.v = Hoehenanteil (D2: Wind-Displacement oben mehr als am Saum).
+function makeTentRoofGeo(variant: number): THREE.BufferGeometry {
+  const rand = mulberry32(9100 + variant * 137);
+  const phase = rand() * Math.PI * 2;
+  const phase2 = rand() * Math.PI * 2;
+  const amp = 0.045 + rand() * 0.045; // Amplitude der gebackenen Windwelle (VERSTAERKT: 0.018-0.038 las als starre Scheibe)
+  const SX = 8;
+  const SZ = 6;
+
+  const height = (x: number, z: number): number => {
+    const base = Math.max(0, 1 - Math.abs(x)); // Prisma-Profil (First 1, Traufe 0)
+    const sagSpan = Math.sin(((z + 0.8) / 1.6) * Math.PI); // 0 an den Stangen, 1 dazwischen
+    const inSpan = z > -0.8 && z < 0.8;
+    const sag = inSpan
+      ? sagSpan * 0.16
+      : Math.max(0, (Math.abs(z) - 0.8) / 0.2) * 0.075; // Ueberhang haengt durch (VERSTAERKT)
+    const kink = Math.max(0, Math.abs(x) - 0.35) * Math.max(0, Math.abs(z) - 0.5) * 0.28;
+    const wave = Math.sin(x * 4.2 + phase) * Math.cos(z * 2.6 + phase2) * amp;
+    return Math.max(0.015, base - sag * (0.35 + 0.65 * base) - kink + wave * base);
+  };
+
   const pos: number[] = [];
   const uvs: number[] = [];
-  for (const v of tris) {
-    pos.push(v[0], v[1], v[2]);
-    uvs.push((v[0] + v[2]) * 0.7, (v[1] + v[2]) * 0.7);
+  const idx: number[] = [];
+  for (let j = 0; j <= SZ; j++) {
+    for (let i = 0; i <= SX; i++) {
+      const x = -1 + (2 * i) / SX;
+      const z = -1 + (2 * j) / SZ;
+      const y = height(x, z);
+      pos.push(x, y, z);
+      uvs.push((x + 1) * 0.75, y);
+    }
   }
+  for (let j = 0; j < SZ; j++) {
+    for (let i = 0; i < SX; i++) {
+      const a = j * (SX + 1) + i;
+      const b = a + 1;
+      const c = a + SX + 1;
+      const d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  // Giebel vorn (z = -1, Normale -z) und hinten (z = +1, Normale +z) mit
+  // denselben deformierten Hoehen wie die Dachkante
+  const gable = (z: number, front: boolean) => {
+    const gy = [height(-1, z), height(1, z), height(0, z)];
+    const base = pos.length / 3;
+    pos.push(-1, gy[0], z, 1, gy[1], z, 0, gy[2], z);
+    uvs.push(0, gy[0], 0.75, gy[1], 0.375, gy[2]);
+    if (front) idx.push(base, base + 2, base + 1);
+    else idx.push(base, base + 1, base + 2);
+  };
+  gable(-1, true);
+  gable(1, false);
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.computeVertexNormals();
+  geo.setIndex(idx);
+  geo.computeVertexNormals(); // Normalen nach der Deformation neu berechnen
   return geo;
 }
 
-// Modul-Geometrien (Budget-Regel 8)
-const roofGeo = makeTentRoofGeo();
-const skirtGeo = new THREE.BoxGeometry(0.04, 1, 1);            // herabhaengender Saum
+// Modul-Geometrien (Budget-Regel 8): 3 Dach- und 3 Saum-Varianten (D1/D3),
+// abwechselnd verwendet — Material-Geometrie-Budget unveraendert (je 3).
+const roofGeos = [makeTentRoofGeo(0), makeTentRoofGeo(1), makeTentRoofGeo(2)];
+
+// Saum (D3): leicht wellig statt geradlinig — Auslenkung nach unten zunehmend
+// (0,5 - y: am Ueberhang voll, an der Traufe 0), Phase pro Variante.
+function makeSkirtGeo(variant: number): THREE.BufferGeometry {
+  const rand = mulberry32(8800 + variant * 53);
+  const phase = rand() * Math.PI * 2;
+  const geo = new THREE.BoxGeometry(0.04, 1, 1, 1, 4, 10);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const wave =
+      Math.sin(z * Math.PI * 6 + phase) * 0.11 +
+      Math.sin(z * Math.PI * 2.3 + phase * 1.7) * 0.075;
+    pos.setX(i, x + wave * (0.5 - y));
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+const skirtGeos = [makeSkirtGeo(0), makeSkirtGeo(1), makeSkirtGeo(2)];
+
 const poleGeo = new THREE.CylinderGeometry(0.035, 0.04, 1, 6); // Stuetzstange
 const guyRopeGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 5); // Abspannseil
 const pegGeo = new THREE.ConeGeometry(0.032, 0.3, 6);          // Zeltpflock
 const doorGeo = new THREE.PlaneGeometry(0.7, 0.95);            // Eingangs-Oeffnung
 const herdGeo = new THREE.ConeGeometry(1.8, 1.1, 7);           // Herdenzelt (flach)
 
-// Ziegenhaar-Stoff (SPEC C): goatHairTexture wiederverwendet, 3 Farbvarianten
-// (0x9A7A58-Basis, abgedunkelt, aufgehellt) — Material-Budget: genau 3 Instanzen.
-// Naht-Streifen via Textur-Offset versetzt (geklonte CanvasTexture, selbes Bild).
-function makeTentMaterial(color: number, offsetU: number): THREE.MeshLambertMaterial {
-  const map = offsetU === 0 ? goatHairTexture : goatHairTexture.clone();
-  if (offsetU !== 0) {
-    map.offset.set(offsetU, 0);
-    map.needsUpdate = true;
-  }
-  return new THREE.MeshLambertMaterial({ color, map, side: THREE.DoubleSide });
+// --- SPEC-perf-stoffe D2: Wind-Animation via onBeforeCompile ---
+// pos.y += sin(worldPos.x * 0.8 + uTime * 1.2) * 0.04 * uv.y  (oben > Saum).
+// uTime wird in useFrame aktualisiert; low-Tier: OHNE Animation. Phase pro
+// Stoff-Variante leicht versetzt; customProgramCacheKey trennt die Programme.
+const uTime = { value: 0 };
+const IS_LOW_TIER = detectQuality() === 'low';
+
+function applyWind(mat: THREE.Material, phase: number) {
+  if (IS_LOW_TIER) return;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+  #ifdef USE_INSTANCING
+    vec4 windWorld = instanceMatrix * vec4(transformed, 1.0);
+  #else
+    vec4 windWorld = vec4(transformed, 1.0);
+  #endif
+  transformed.y += sin(windWorld.x * 0.8 + uTime * 1.2 + ${phase.toFixed(3)}) * 0.09 * uv.y;`
+      );
+  };
+  mat.customProgramCacheKey = () => `tent-wind-${phase}`;
 }
-const tentMatA = makeTentMaterial(0xB99A76, 0);      // Basis (Re-Review: aufgehellt — Zelte lasen als schwarze Silhouette)
-const tentMatB = makeTentMaterial(0x93794F, 0.37);   // abgedunkelt, Naht versetzt
-const tentMatC = makeTentMaterial(0xCFAE82, 0.71);   // aufgehellt, Naht versetzt
+
+// Zeltstoff (SPEC C + B): CC0 fabric-burlap als map (Tinting via color — die
+// Zeltfarben 0xB99A76/0x93794F/0xCFAE82 bleiben), Normal-Map nur HIGH-Tier.
+// Material-Budget: genau 3 Instanzen (Singletons).
+function makeTentMaterial(color: number, phase: number): THREE.MeshLambertMaterial {
+  const mat = new THREE.MeshLambertMaterial({
+    color,
+    map: burlapColorTexture,
+    normalMap: burlapNormalTexture,
+    side: THREE.DoubleSide,
+  });
+  applyWind(mat, phase);
+  return mat;
+}
+const tentMatA = makeTentMaterial(0xb99a76, 0);      // Basis
+const tentMatB = makeTentMaterial(0x93794f, 2.1);    // abgedunkelt
+const tentMatC = makeTentMaterial(0xcfae82, 4.2);    // aufgehellt
 const tentMats = [tentMatA, tentMatB, tentMatC];
 
 // Dunkle Eingangs-Oeffnung: eigenes, opakes Material (liest sich als Oeffnung)
@@ -218,8 +319,10 @@ export function CampIsrael() {
     return { roofs, skirts, poles, ropes, pegs, doors, herd };
   }, []);
 
-  // Rauch: aufsteigend, transparent, langsam driftend (3-5 Sprites)
+  // Rauch: aufsteigend, transparent, langsam driftend (3-5 Sprites);
+  // D2: uTime-Uniform fuer die Zelt-Wind-Animation
   useFrame((state) => {
+    uTime.value = state.clock.elapsedTime;
     const group = smokeGroup.current;
     if (!group) return;
     const t = state.clock.elapsedTime;
@@ -234,14 +337,14 @@ export function CampIsrael() {
 
   return (
     <group>
-      {/* Prismen-Dach, 3 Stoff-Varianten (3 InstancedMeshes) */}
+      {/* Prismen-Dach, 3 Stoff-/Geometrie-Varianten (3 InstancedMeshes, D1) */}
       {parts.roofs.map((batch, v) => (
-        <Instanced key={`roof-${v}`} geometry={roofGeo} material={tentMats[v]} transforms={batch} />
+        <Instanced key={`roof-${v}`} geometry={roofGeos[v]} material={tentMats[v]} transforms={batch} />
       ))}
 
-      {/* Herabhaengender Saum, je Stoff-Variante (3 InstancedMeshes) */}
+      {/* Herabhaengender, welliger Saum, je Stoff-Variante (3 InstancedMeshes, D3) */}
       {parts.skirts.map((batch, v) => (
-        <Instanced key={`skirt-${v}`} geometry={skirtGeo} material={tentMats[v]} transforms={batch} />
+        <Instanced key={`skirt-${v}`} geometry={skirtGeos[v]} material={tentMats[v]} transforms={batch} />
       ))}
 
       {/* Stuetzstangen + Abspannseile + Zeltpflloecke (je 1 InstancedMesh) */}

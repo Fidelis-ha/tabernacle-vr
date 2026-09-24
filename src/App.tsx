@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { PerformanceMonitor } from '@react-three/drei';
 import { XR, XROrigin, useXR, useXRControllerLocomotion, createXRStore } from '@react-three/xr';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -46,6 +47,67 @@ function XRSessionSync() {
     setXrActive(!!session);
     return () => setXrActive(false);
   }, [session, setXrActive]);
+  return null;
+}
+
+// SPEC-perf-stoffe A3 — Movement-Regression (Sketchfab-Pattern): useFrame liest
+// die Kameraposition (Weltkoordinaten — in XR steuert der XROrigin die Kamera),
+// bei Bewegung performance.regress() pro Frame. WICHTIG: Diese R3F-Version
+// multipliziert performance.current NICHT automatisch in den dpr — deshalb
+// wird die Skalierung hier explizit angewendet: store.setDpr(baseDpr * current).
+// performance.current springt bei regress() auf min (0.5) und nach dem Debounce
+// (= Stillstand) zurueck auf 1 — dpr folgt automatisch.
+function MovementRegress({ baseDpr }: { baseDpr: number }) {
+  const performance = useThree((s) => s.performance);
+  const current = useThree((s) => s.performance.current);
+  const setStoreDpr = useThree((s) => s.setDpr);
+  const camera = useThree((s) => s.camera);
+  const last = useRef(new THREE.Vector3());
+  const curr = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    setStoreDpr(baseDpr * current);
+  }, [baseDpr, current, setStoreDpr]);
+
+  useFrame(() => {
+    camera.getWorldPosition(curr.current);
+    if (curr.current.distanceToSquared(last.current) > 0.0001) {
+      performance.regress();
+      last.current.copy(curr.current);
+    }
+  });
+  return null;
+}
+
+// SPEC-perf-stoffe A4 — Shader-Precompile: nach dem ersten Frame alle
+// Programme der Szene vorkompilieren (renderer.compileAsync, r160+; Fallback
+// compile), damit beim Bewegungs-Regress/dpr-Wechsel keine Hitches entstehen.
+function PrecompileShaders() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        try {
+          const compiled = gl.compileAsync(scene, camera) as unknown;
+          if (compiled instanceof Promise) void compiled.catch(() => {});
+        } catch {
+          try {
+            gl.compile(scene, camera);
+          } catch {
+            /* Precompile ist best-effort */
+          }
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [gl, scene, camera]);
   return null;
 }
 
@@ -178,6 +240,13 @@ export default function App() {
   const quality = useGameStore((s) => s.quality);
   const q = QUALITY_SETTINGS[quality];
 
+  // SPEC-perf-stoffe A2: dynamisches dpr. Basis = QUALITY_SETTINGS[quality].dpr
+  // (Start am oberen Rand, PerformanceMonitor regelt runter/hoch), gefolgt von
+  // der Movement-Regression (A3) via performance.current-Multiplikation.
+  const minDpr = q.dpr[0];
+  const maxDpr = q.dpr[1];
+  const [dpr, setDpr] = useState<number>(q.dpr[1]);
+
   useEffect(() => {
     const stages = [
       { progress: 20, delay: 0 },
@@ -218,12 +287,14 @@ export default function App() {
 
       {/* Three.js Canvas with XR — Quest-3-Settings (Budget-Regeln 6-7):
           dpr [1,2], high-performance, ACESFilmic exposure 1.1, Foveation 1.
-          SPEC F: 'low'-Tier faehrt dpr [0.75,1.25] + antialias aus */}
+          SPEC F: 'low'-Tier faehrt dpr [0.75,1.25] + antialias aus.
+          SPEC-perf-stoffe A2: dynamisches dpr via PerformanceMonitor
+          (pmndrs "Scaling Performance"), bounds/flipflops wie SPEC. */}
       <Canvas
         style={{ width: '100%', height: '100%', touchAction: 'none' }}
         camera={{ fov: 60, near: 0.1, far: 500, position: [0, 1.6, -8], rotation: [0, Math.PI, 0] }}
         shadows={{ enabled: true, type: THREE.PCFSoftShadowMap }}
-        dpr={q.dpr}
+        dpr={dpr}
         gl={{
           antialias: q.antialias,
           alpha: false,
@@ -238,6 +309,21 @@ export default function App() {
           gl.setClearColor(0xCFC2A6); // = Fog-Farbe (Re-Review: Tonunterschied im Horizont-Lückenband)
         }}
       >
+        {/* A2: fps-Überwachung → dpr +0.25/-0.25, Fallback = minDpr nach 3 Flipflops */}
+        <PerformanceMonitor
+          bounds={(refreshrate) => (refreshrate > 90 ? [45, 85] : [28, 55])}
+          flipflops={3}
+          onDecline={() => setDpr((d) => Math.max(minDpr, d - 0.25))}
+          onIncline={() => setDpr((d) => Math.min(maxDpr, d + 0.25))}
+          onFallback={() => setDpr(minDpr)}
+        />
+
+        {/* A3: Bewegung → performance.regress() → dpr temporaer runter */}
+        <MovementRegress baseDpr={dpr} />
+
+        {/* A4: Shader-Precompile nach dem ersten Frame */}
+        <PrecompileShaders />
+
         <XR store={store}>
           {/* Official VR locomotion using react-three/xr hook */}
           <LocomotionController />

@@ -1,7 +1,16 @@
 import * as THREE from 'three';
+import { detectQuality } from './quality';
 
 // Prozedurale Canvas-Texturen (SPEC aaa, Abschnitt b) — einmalig erzeugt,
 // als Modul-Singletons geteilt. Kein Netzwerk-Asset-Load.
+
+// SPEC-perf-stoffe C1 — Antik-Palette (Ex 26,31; gedeckt statt grell).
+// Materials.ts fuehrt dieselben Töne als numerische Konstanten (0x...).
+export const ANTIQUE_BLUE = '#2E4A78';     // gedecktes Antikblau
+export const ANTIQUE_PURPLE = '#6B2D5B';   // Purpurrot/Violett
+export const ANTIQUE_SCARLET = '#8E2B25';  // Scharlach
+export const BYSSUS_TONE = '#E8DFC8';      // feines Geleininen, naturweiss
+const GOLD_BROWN = 'rgba(178,134,74,';     // Cherubim-Wirkerei, dezent goldbraun
 
 function makeCanvas(w: number, h = w): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -24,6 +33,100 @@ function toTexture(
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
+}
+
+// --- SPEC-perf-stoffe B: CC0-Stoff-Texturen (ambientCG, CC0 — siehe
+// public/textures/LICENSE-CC0.md) ---
+// - fabric-weave (feines Gewebe) → Byssus-Vorhaenge, Tor, Parochet-Grundstoff
+// - fabric-burlap (grob) → Zelte (ersetzt makeGoatHair als map), Herdenzelte
+// TextureLoader laedt asynchron; bei Fetch-Failure wird das Canvas-Bild der
+// Fallback-Textur in DIESELBE Textur-Instanz uebernommen (Material-Singletons
+// bleiben unangetastet). Normal-Maps werden nur im HIGH-Tier geladen
+// (low-Tier: null — spart Mobile Bandbreite/GPU).
+const fabricLoader = new THREE.TextureLoader();
+
+// Callbacks: Canvas-Texturen (Tor/Parochet/Schirm/Dach-Innenseite) kompositieren
+// die Gewebe-Textur ueber ihre Farbverlaeufe, sobald das Bild geladen ist.
+const weaveRedraws: ((img: HTMLImageElement) => void)[] = [];
+
+function loadFabricColor(
+  url: string,
+  repeatX: number,
+  repeatY: number,
+  fallback: THREE.CanvasTexture,
+  onImage?: (img: HTMLImageElement) => void
+): THREE.Texture {
+  const tex = fabricLoader.load(
+    url,
+    (t) => {
+      if (onImage && t.image) onImage(t.image as HTMLImageElement);
+    },
+    undefined,
+    () => {
+      // onError: Canvas-Fallback (Identitaet der Textur bleibt erhalten)
+      if (fallback.image) {
+        tex.image = fallback.image;
+        tex.needsUpdate = true;
+      }
+    }
+  );
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function loadFabricNormal(url: string, repeatX: number, repeatY: number): THREE.Texture | null {
+  if (detectQuality() !== 'high') return null; // Normal-Maps nur HIGH-Tier
+  const tex = fabricLoader.load(url);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  return tex;
+}
+
+// Weiches Ueberblenden der Gewebe-Struktur in eine Canvas-Textur (C2:
+// "Gewebe-Textur drunter"): Overlay-Komposition, danach needsUpdate.
+function registerWeaveOverlay(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  tex: THREE.CanvasTexture,
+  alpha = 0.3
+) {
+  weaveRedraws.push((img) => {
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    tex.needsUpdate = true;
+  });
+}
+
+// C2: weiche vertikale Farbverlaeufe statt harter Streifenkanten — jede Farbe
+// haelt ein Plateau, Uebergänge smoothstep-weit veraufend (blurFrac der
+// Streifenbreite).
+function fillSoftStripes(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  colors: string[],
+  blurFrac = 0.35
+) {
+  const n = colors.length;
+  const blur = blurFrac / (2 * n);
+  const g = ctx.createLinearGradient(0, 0, w, 0);
+  g.addColorStop(0, colors[0]);
+  for (let i = 1; i < n; i++) {
+    const b = i / n;
+    g.addColorStop(b - blur, colors[i - 1]);
+    g.addColorStop(b + blur, colors[i]);
+  }
+  g.addColorStop(1, colors[n - 1]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
 }
 
 // --- Sand / Erde (Wuestenboden ausserhalb des Vorhofs) ---
@@ -313,9 +416,9 @@ function makeGodRay(): THREE.CanvasTexture {
   return t;
 }
 
-// --- Goldene Cherubim-Andeutung auf Stoff zeichnen ---
+// --- Goldene Cherubim-Andeutung auf Stoff zeichnen (C2: dezent goldbraun) ---
 function drawCherub(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, alpha: number) {
-  ctx.strokeStyle = `rgba(212,175,55,${alpha})`;
+  ctx.strokeStyle = `${GOLD_BROWN}${alpha})`;
   ctx.lineWidth = 5 * s;
   ctx.lineCap = 'round';
   // aeusserer Fluegel
@@ -330,45 +433,43 @@ function drawCherub(ctx: CanvasRenderingContext2D, x: number, y: number, s: numb
   ctx.stroke();
 }
 
-// --- Tor des Vorhofs: 4 Streifen blau/violett/scharlach/byssus (Ex 27,16) ---
+// --- Tor des Vorhofs: 4 Streifen blau/violett/scharlach/byssus (Ex 27,16)
+// C2: weiche Farbuebergaenge (keine harten Kanten), Antik-Palette, dezente
+// Cherubim in Goldbraun; die Gewebe-Textur wird nach dem Laden ueberblendet. ---
 function makeGate(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  const colors = ['#1E3A5F', '#4B0082', '#8B0000', '#F5EFE0'];
-  colors.forEach((col, i) => {
-    ctx.fillStyle = col;
-    ctx.fillRect(i * 64, 0, 64, 256);
-  });
-  // Leinenstruktur darueber
-  for (let y = 0; y < 256; y += 4) {
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  fillSoftStripes(ctx, 256, 256, [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE]);
+  // feine Leinenstruktur darueber (Canvas-eigene Basis, bis das Weave-Bild laedt)
+  for (let y = 0; y < 256; y += 3) {
+    ctx.fillStyle = 'rgba(255,255,255,0.035)';
     ctx.fillRect(0, y, 256, 1);
   }
-  // Goldfaeden als Wirkerei: dicke, kontrastreiche vertikale + horizontale
-  // Goldlinien (2-3 px), damit die Wirkerei auch auf Distanz lesbar bleibt
-  for (let x = 6; x < 256; x += 14) {
-    ctx.fillStyle = 'rgba(212,175,55,0.6)';
-    ctx.fillRect(x, 0, 3, 256);
+  for (let x = 0; x < 256; x += 3) {
+    ctx.fillStyle = 'rgba(0,0,0,0.03)';
+    ctx.fillRect(x, 0, 1, 256);
   }
-  for (let y = 10; y < 256; y += 22) {
-    ctx.fillStyle = 'rgba(212,175,55,0.45)';
-    ctx.fillRect(0, y, 256, 4);
+  // Cherubim-Wirkerei: dezent ueber beide Farben (goldbraun, niedriges Alpha)
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 4; col++) {
+      const cx = col * 64 + (row % 2 === 0 ? 20 : 44);
+      const cy = row * 80 + 44;
+      if ((row + col) % 2 === 0) drawCherub(ctx, cx, cy, 0.34, 0.22);
+      else drawCherubNarrow(ctx, cx, cy, 0.34, 0.22);
+    }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
+  registerWeaveOverlay(c, ctx, t, 0.32);
   return t;
 }
 
 // --- Parochet: 4 Farben + Cherubim-Wirkerei (Ex 26,31) ---
-// B2: Wirkerei sichtbarer — kleine wiederholte Cherubim-Silhouetten
-// (2 gezeichnete Formen, golden, alpha 0.35) über die 4 Farbstationen
+// C2: Antik-Palette, weiche Uebergaenge, Cherubim dezent goldbraun;
+// Byssus-Grundstoff = fabric-weave (Overlay nach Bild-Laden + als Material-Map).
 function makeVeil(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  const colors = ['#1E3A5F', '#4B0082', '#8B0000', '#F5EFE0'];
-  colors.forEach((col, i) => {
-    ctx.fillStyle = col;
-    ctx.fillRect(i * 64, 0, 64, 256);
-  });
+  fillSoftStripes(ctx, 256, 256, [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE]);
   // Byssus-Basis: feines Leinenraster über allen Feldern
   for (let y = 0; y < 256; y += 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
@@ -379,26 +480,27 @@ function makeVeil(): THREE.CanvasTexture {
     ctx.fillRect(x, 0, 1, 256);
   }
   // Wirkerei-Raster: kleine Cherubim-Silhouetten (Form A breit gefächert,
-  // Form B schmal aufgerichtet), versetzt über alle 4 Farbfelder
+  // Form B schmal aufgerichtet), versetzt über alle 4 Farbfelder — dezent
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 4; col++) {
       const cx = col * 64 + (row % 2 === 0 ? 22 : 46);
       const cy = row * 60 + 34;
-      if ((row + col) % 2 === 0) drawCherub(ctx, cx, cy, 0.42, 0.35);
-      else drawCherubNarrow(ctx, cx, cy, 0.42, 0.35);
+      if ((row + col) % 2 === 0) drawCherub(ctx, cx, cy, 0.42, 0.24);
+      else drawCherubNarrow(ctx, cx, cy, 0.42, 0.24);
     }
   }
-  // grosse Cherubim im mittleren Band (Hauptwirkerei)
-  drawCherub(ctx, 96, 150, 1.15, 0.5);
-  drawCherub(ctx, 176, 150, 1.15, 0.5);
+  // grosse Cherubim im mittleren Band (Hauptwirkerei, goldbraun dezent)
+  drawCherub(ctx, 96, 150, 1.15, 0.34);
+  drawCherub(ctx, 176, 150, 1.15, 0.34);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  registerWeaveOverlay(c, ctx, t, 0.35);
   return t;
 }
 
 // --- Schmale Cherubim-Silhouette (zweite Wirkerei-Form, B2) ---
 function drawCherubNarrow(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, alpha: number) {
-  ctx.strokeStyle = `rgba(212,175,55,${alpha})`;
+  ctx.strokeStyle = `${GOLD_BROWN}${alpha})`;
   ctx.lineWidth = 4 * s;
   ctx.lineCap = 'round';
   // beidseitig steil aufragende Flügel
@@ -535,42 +637,74 @@ function makeBronze(): THREE.CanvasTexture {
   return t;
 }
 
-// --- Unterseite der Byssus-Decke: 4-farbige Streifen + Cherubim (Ex 26,1) ---
+// --- Unterseite der Byssus-Decke (Ex 26,1: 10 Vorhaenge) ---
+// C3: Byssus dominiert; die Farb-Akzente nur als schmale Randboerden
+// ("Ränder von Blau", Ex 26,4/26,7), Cherubim dezent goldbraun.
 function makeUnderRoof(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(512, 256);
-  const colors = ['#1E3A5F', '#4B0082', '#8B0000', '#F5EFE0'];
-  const bandH = 256 / 8;
-  for (let i = 0; i < 8; i++) {
-    ctx.fillStyle = colors[i % 4];
-    ctx.fillRect(0, i * bandH, 512, bandH);
-  }
-  for (let x = 0; x < 512; x += 5) {
+  // Byssus-Grundstoff dominiert die gesamte Flaeche
+  ctx.fillStyle = BYSSUS_TONE;
+  ctx.fillRect(0, 0, 512, 256);
+  // feine Webstruktur
+  for (let y = 0; y < 256; y += 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.045)';
+    ctx.fillRect(0, y, 512, 1);
+  }
+  for (let x = 0; x < 512; x += 3) {
+    ctx.fillStyle = 'rgba(0,0,0,0.025)';
     ctx.fillRect(x, 0, 1, 256);
   }
+  // schmale Randboerden oben/unten: Blau (bibl. "Ränder von Blau"),
+  // flankiert von je 1 schmaler Violett-/Scharlachlinie (Wirkerei-Akzent)
+  const band = 14;
+  const thin = 4;
+  for (const edge of [0, 1]) {
+    const yBlue = edge === 0 ? 0 : 256 - band;
+    ctx.fillStyle = ANTIQUE_BLUE;
+    ctx.fillRect(0, yBlue, 512, band);
+    const yPurple = edge === 0 ? band : 256 - band - thin;
+    ctx.fillStyle = ANTIQUE_PURPLE;
+    ctx.fillRect(0, yPurple, 512, thin);
+    const yScarlet = edge === 0 ? band + thin : 256 - band - thin * 2;
+    ctx.fillStyle = ANTIQUE_SCARLET;
+    ctx.fillRect(0, yScarlet, 512, thin);
+  }
+  // dezente vertikale Nähte: Andeutung der 10 einzelnen Byssus-Vorhaenge
+  for (let i = 1; i < 10; i++) {
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillRect((i * 512) / 10, band + thin * 2, 1, 256 - (band + thin * 2) * 2);
+  }
+  // Cherubim-Wirkerei: dezent goldbraun auf dem Byssus-Grund
   for (const frac of [0.28, 0.5, 0.72]) {
-    drawCherub(ctx, 256 - 70, 256 * frac, 1.3, 0.34);
-    drawCherub(ctx, 256 + 70, 256 * frac, 1.3, 0.34);
+    drawCherub(ctx, 256 - 70, 256 * frac, 1.1, 0.22);
+    drawCherub(ctx, 256 + 70, 256 * frac, 1.1, 0.22);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  registerWeaveOverlay(c, ctx, t, 0.3);
   return t;
 }
 
 // --- Eingangsschirm des Heiligen: 5 Streifen (Ex 26,36) ---
+// C2: Antik-Palette, weiche Uebergaenge, Gewebe-Overlay.
 function makeScreen(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  const colors = ['#1E3A5F', '#4B0082', '#8B0000', '#F5EFE0', '#1E3A5F'];
-  colors.forEach((col, i) => {
-    ctx.fillStyle = col;
-    ctx.fillRect(i * 51.2, 0, 51.2, 256);
-  });
-  for (let y = 0; y < 256; y += 4) {
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  fillSoftStripes(ctx, 256, 256, [
+    ANTIQUE_BLUE,
+    ANTIQUE_PURPLE,
+    ANTIQUE_SCARLET,
+    BYSSUS_TONE,
+    ANTIQUE_BLUE,
+  ]);
+  for (let y = 0; y < 256; y += 3) {
+    ctx.fillStyle = 'rgba(255,255,255,0.035)';
     ctx.fillRect(0, y, 256, 1);
   }
+  // dezente Cherubim-Andeutung in der Byssus-Mitte
+  drawCherubNarrow(ctx, 128, 190, 0.5, 0.2);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  registerWeaveOverlay(c, ctx, t, 0.32);
   return t;
 }
 
@@ -609,3 +743,28 @@ export const goldTexture = makeGold();
 export const goldRoughTexture = makeGoldRough();
 export const breadTexture = makeBread();
 export const bronzeTexture = makeBronze();
+
+// --- SPEC-perf-stoffe B: CC0-Stoffe (ambientCG) ---
+// weaveColor: Byssus-Grundstoff (repeat 3,2 Vorhaenge); sobald das Bild da ist,
+// werden die Canvas-Texturen von Tor/Parochet/Schirm/Dach-Innenseite mit der
+// Gewebe-Struktur ueberblendet. Fallback: Canvas-Leinen.
+export const weaveColorTexture = loadFabricColor(
+  '/textures/fabric-weave/color.jpg',
+  3,
+  2,
+  linenTexture,
+  (img) => {
+    for (const redraw of weaveRedraws) redraw(img);
+  }
+);
+export const weaveNormalTexture = loadFabricNormal('/textures/fabric-weave/normal.jpg', 3, 2);
+
+// burlapColor: Ziegenhaar-Zeltstoff (repeat 4,4 Zelte) — ersetzt makeGoatHair
+// als map; Canvas-Ziegenhaar bleibt onError-Fallback. Tinting via Material.color.
+export const burlapColorTexture = loadFabricColor(
+  '/textures/fabric-burlap/color.jpg',
+  4,
+  4,
+  goatHairTexture
+);
+export const burlapNormalTexture = loadFabricNormal('/textures/fabric-burlap/normal.jpg', 4, 4);

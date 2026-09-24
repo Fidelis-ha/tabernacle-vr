@@ -59,8 +59,11 @@ export const QUALITY_SETTINGS: Record<QualityTier, QualitySettings> = {
   },
 };
 
-// Schwacher GPU-String (Mittelklasse-Smartphones, SPEC F)
-const WEAK_GPU = /Adreno 5|Adreno 6[0-2]|Mali-G[5-7]|PowerVR|Apple A1[0-2]/i;
+// Schwacher GPU-String (Mittelklasse-Smartphones, SPEC F / SPEC-perf-stoffe A1):
+// ALLE mobilen Adreno 6xx gelten als weak (Shiftphone 8 / Adreno 643 lief vorher
+// im HIGH-Tier und droppte Frames), plus Mali 5-7/G7x/T7x, Xclipse, Immortalis.
+const WEAK_GPU =
+  /Adreno [5-6]|Mali-G[5-7]|Mali-[GT]7|PowerVR|Apple A1[0-2]|Xclipse|Immortalis/i;
 
 function detectGpuString(): string {
   try {
