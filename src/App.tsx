@@ -6,6 +6,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { Scene } from './components/Scene';
 import { GameStateManager, GameUI, useGameStore, ensureAudioStarted } from './components/GameUI';
+import { COURTYARD_WIDTH, COURTYARD_LENGTH, GATE_WIDTH } from './components/TabernacleFloor';
 import { QUALITY_SETTINGS } from './utils/quality';
 
 // Create XR store with teleport enabled
@@ -375,6 +376,13 @@ interface AABB {
 }
 
 const PLAYER_RADIUS = 0.3;
+
+// SPEC-marc-feedback2 C: Vorhofs-Leinenwand-Collider (Ex 27,9-19) — die
+// Leinenwände sind NICHT durchlässig, MIT Durchlässen:
+// - Osttor (z = 0, 20 Ellen = 9 m breit → Lücke x ∈ [-4,5; 4,5])
+// - Zelteingang des Heiligtums (z = 31,5, zwischen den Wand-Collidern)
+const COURTYARD_HALF_W = COURTYARD_WIDTH / 2; // 11,25
+const WALL_T = 0.15; // halbe Wanddicke der Collider-Boxen
 const COLLIDERS: AABB[] = [
   // Tabernacle south wall (x = -2.25)
   { minX: -2.55, maxX: -1.95, minZ: 31.3, maxZ: 45.3 },
@@ -386,7 +394,31 @@ const COLLIDERS: AABB[] = [
   { minX: -1.125, maxX: 1.125, minZ: 25.875, maxZ: 28.125 },
   // Bronze basin: radius ~0.8 at z = 29.5
   { minX: -0.9, maxX: 0.9, minZ: 28.6, maxZ: 30.4 },
+  // Ostwand (z = 0) — zwei Segmente, Tor-Durchlass x ∈ [-4,5; 4,5] bleibt frei
+  { minX: -COURTYARD_HALF_W, maxX: -GATE_WIDTH / 2, minZ: -WALL_T, maxZ: WALL_T },
+  { minX: GATE_WIDTH / 2, maxX: COURTYARD_HALF_W, minZ: -WALL_T, maxZ: WALL_T },
+  // Westwand (z = 45)
+  { minX: -COURTYARD_HALF_W, maxX: COURTYARD_HALF_W, minZ: COURTYARD_LENGTH - WALL_T, maxZ: COURTYARD_LENGTH + WALL_T },
+  // Südwand (x = -11,25)
+  { minX: -COURTYARD_HALF_W - WALL_T, maxX: -COURTYARD_HALF_W + WALL_T, minZ: 0, maxZ: COURTYARD_LENGTH },
+  // Nordwand (x = +11,25)
+  { minX: COURTYARD_HALF_W - WALL_T, maxX: COURTYARD_HALF_W + WALL_T, minZ: 0, maxZ: COURTYARD_LENGTH },
 ];
+
+// SPEC-marc-feedback2 C: weiträumige Laufgrenzen — außen um den GANZEN Vorhof
+// herumlaufen (inkl. Camp-Ring 25-40 m) + innen um das Heiligtum herum.
+// Blockiert wird nur über die COLLIDERS (Heiligtumswände, Altar, Becken,
+// Vorhofs-Leinenwände mit Tor-Durchlass).
+const WALK_BOUND_X = 34;
+const WALK_Z_MIN = -28;
+const WALK_Z_MAX = 78;
+
+function clampWalkX(x: number): number {
+  return Math.max(-WALK_BOUND_X, Math.min(WALK_BOUND_X, x));
+}
+function clampWalkZ(z: number): number {
+  return Math.max(WALK_Z_MIN, Math.min(WALK_Z_MAX, z));
+}
 
 function isBlocked(x: number, z: number): boolean {
   for (const c of COLLIDERS) {
@@ -534,9 +566,9 @@ function LocomotionController() {
         // Axis-separated movement with AABB collision
         const p = ref.current.position;
         const nx = p.x + velocity.x * deltaTime;
-        if (!isBlocked(nx, p.z)) p.x = Math.max(-10.5, Math.min(10.5, nx));
+        if (!isBlocked(nx, p.z)) p.x = clampWalkX(nx);
         const nz = p.z + velocity.z * deltaTime;
-        if (!isBlocked(p.x, nz)) p.z = Math.max(-5, Math.min(43, nz));
+        if (!isBlocked(p.x, nz)) p.z = clampWalkZ(nz);
         p.y = 0;
       }
 
@@ -598,17 +630,17 @@ function LocomotionController() {
         if (!target) return;
         const p = target.position;
         const nx = p.x + deltaX;
-        if (!isBlocked(nx, p.z)) p.x = Math.max(-10.5, Math.min(10.5, nx));
+        if (!isBlocked(nx, p.z)) p.x = clampWalkX(nx);
         const nz = p.z + deltaZ;
-        if (!isBlocked(p.x, nz)) p.z = Math.max(-5, Math.min(43, nz));
+        if (!isBlocked(p.x, nz)) p.z = clampWalkZ(nz);
         p.y = 0;
       } else {
         // Desktop: move the camera directly (XROrigin does not drive it outside XR)
         const p = camera.position;
         const nx = p.x + deltaX;
-        if (!isBlocked(nx, p.z)) p.x = Math.max(-10.5, Math.min(10.5, nx));
+        if (!isBlocked(nx, p.z)) p.x = clampWalkX(nx);
         const nz = p.z + deltaZ;
-        if (!isBlocked(p.x, nz)) p.z = Math.max(-5, Math.min(43, nz));
+        if (!isBlocked(p.x, nz)) p.z = clampWalkZ(nz);
         p.y = 1.6;
       }
     }

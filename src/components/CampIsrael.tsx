@@ -26,6 +26,14 @@ import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 const CENTER_Z = COURTYARD_Z_CENTER; // 22,5 — Ring um die Vorhof-Mitte
 const TENT_COUNT = 52;
 
+// SPEC-marc-feedback2 A1: Sperrzone des VORHOFS (erweiterter Kasten, Puffer
+// 5 m fuer Zeltbreite + Abspannseile). Ein Zelt-/Tier-Anker innerhalb
+// |x| < 27 && z > -7 && z < 52 wird VERWORFEN (der Vorhof selbst ist
+// 22,5 x 45 m: x ∈ [-11,25; 11,25], z ∈ [0; 45]).
+export function inCourtyardKeepout(x: number, z: number): boolean {
+  return Math.abs(x) < 27 && z > -7 && z < 52;
+}
+
 // Deterministischer Zufall (stabile Anordnung über Reloads)
 function mulberry32(seed: number) {
   return () => {
@@ -54,15 +62,25 @@ export const TENT_HALF_L = 1.8;     // halbe Leibungslaenge
 function generateTents(): TentSpec[] {
   const rand = mulberry32(40277);
   const tents: TentSpec[] = [];
-  for (let i = 0; i < TENT_COUNT; i++) {
+  // A1: verworfene Specs werden NEU gewürfelt (while + Abbruchzähler),
+  // TENT_COUNT bleibt unverändert.
+  let attempts = 0;
+  const maxAttempts = TENT_COUNT * 200;
+  while (tents.length < TENT_COUNT && attempts < maxAttempts) {
+    attempts++;
     // Ringwinkel: Osten (Richtung z = 0, also d.z < 0) bleibt als Keil frei
     const angle = rand() * Math.PI * 2;
     const dir = { x: Math.sin(angle), z: Math.cos(angle) };
     if (dir.z < -0.7) continue; // Ostkeil frei (schmaler, Platz des Volkes)
     const radius = 25 + rand() * 15; // 25-40 m um die Vorhof-Mitte
+    const x = dir.x * radius + (rand() - 0.5) * 4;
+    const z = CENTER_Z + dir.z * radius + (rand() - 0.5) * 4;
+    // A1: Vorhof-Sperrzone — nur AKZEPTIEREN, wenn AUSSERHALB
+    // (|x| > 27 ODER z < -7 ODER z > 52), sonst neu würfeln
+    if (inCourtyardKeepout(x, z)) continue;
     tents.push({
-      x: dir.x * radius + (rand() - 0.5) * 4,
-      z: CENTER_Z + dir.z * radius + (rand() - 0.5) * 4,
+      x,
+      z,
       rotY: rand() * Math.PI * 2,
       scale: 1.1 + rand() * 0.5,
       herd: rand() < 0.2, // SPEC C: nur 20% kleine Herdenzelte
@@ -73,6 +91,15 @@ function generateTents(): TentSpec[] {
 
 // Modul-Daten (einmalige Erzeugung, von Animals.tsx als Positions-Anker nutzbar)
 export const TENT_SPECS = generateTents();
+
+// A3-Verifikation (Assert-artiger Check): KEIN TENT_SPECS-Eintrag innerhalb
+// der Vorhof-Sperrzone — der Marc-Bug „Es steht ein Zelt in der Stiftshütte"
+// ist damit ausgeschlossen (Vorhof x ∈ [-11,25; 11,25], z ∈ [0; 45] ⊂ Kasten).
+for (const t of TENT_SPECS) {
+  if (inCourtyardKeepout(t.x, t.z)) {
+    console.error('[CampIsrael] ASSERT: Zelt im Vorhof-Sperrkasten!', t);
+  }
+}
 
 // --- Einheits-Prisma (SPEC C: Flachdach-Hauptform) mit statischer
 // Stoff-Deformation (SPEC-perf-stoffe D1):

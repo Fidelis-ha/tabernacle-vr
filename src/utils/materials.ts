@@ -96,9 +96,10 @@ export const BYSSUS_CHERUBIM = new THREE.MeshStandardMaterial({
 });
 
 // Ziegenhaar - grober Stoff (B: fabric-burlap CC0 als map, makeGoatHair bleibt
-// onError-Fallback); Normal-Map nur HIGH-Tier. Farb-Ton via color-Tinting.
+// onError-Fallback); Normal-Map nur HIGH-Tier. SPEC-marc-feedback2 E: Farb-Tint
+// dunkelbraun-grau (Webstruktur bleibt sichtbar), erste Außenlage (Ex 26,7).
 export const GOAT_HAIR = new THREE.MeshStandardMaterial({
-  color: 0xFFFFFF,
+  color: 0x8F8272,
   roughness: 0.92,
   map: burlapColorTexture,
   normalMap: burlapNormalTexture,
@@ -107,17 +108,21 @@ export const GOAT_HAIR = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide,
 });
 
-// Rot gefaerbte Widderfelle (Ex 26,14)
+// Rot gefaerbte Widderfelle (Ex 26,14) — E: Tint rotbraun-rötlich auf der
+// burlap/goatHair-Basis (mittleres Band der Decken-Stapel-Lagen)
 export const RAM_SKIN = new THREE.MeshStandardMaterial({
   color: 0x8B3E2F,
   roughness: 0.9,
+  map: burlapColorTexture,
   side: THREE.DoubleSide,
 });
 
-// Tachasch-Felle - dunkle Dachhaut
+// Tachasch-Felle - dunkle Dachhaut — E: dunkles Leder auf burlap-Basis
+// (oberste Lage)
 export const TACHASH = new THREE.MeshStandardMaterial({
-  color: 0x2E2118,
+  color: 0x3A2A1E,
   roughness: 0.95,
+  map: burlapColorTexture,
   side: THREE.DoubleSide,
 });
 

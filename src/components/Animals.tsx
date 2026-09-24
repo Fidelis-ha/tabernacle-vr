@@ -1,26 +1,36 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { useGLTF, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { InstanceTransform, Vec3 } from '../utils/instancing';
-import { TENT_SPECS } from './CampIsrael';
+import { TENT_SPECS, inCourtyardKeepout } from './CampIsrael';
 import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 
 // Herde des Volks (deutbare Zutat, Ex 12,38: "auch Kleinvieh zog mit")
-// SPEC D: 12-18 Schafe/Ziegen (hell, einige dunkelbraun) + 3-5 Esel (grau),
-// im Camp zwischen den Zeltgruppen (TENT_SPECS als Anker + Versatz),
-// Ostkeil + Vorhof frei. Low-Poly aber FORMtreu (Kapsel-Koerper, Kugel-Kopf,
-// abwaerts geneigte Schnauze, 4 Zylinderbeine, Ohren, Schwaenze; Ziege mit
-// Bart + Hoernern, Esel gross mit Langohren + Maehne + Quastenschwanz).
-// Animation MINIMAL: 2-3 Koepfe nicken, 1-2 Esel schlagen mit dem Schwanz.
-// InstancedMesh je Koerperteil, 3 Materialien, kein castShadow, < 15 Draw Calls.
+// SPEC-marc-feedback2 B: Esel/Kuh/Alpaka als animierte Quaternius-CC0-Assets
+// (public/models/animals/{Donkey,Cow,Alpaca}.glb — Draco, 1 Palette-Material,
+// je 7-8 Primitives; Alpaca = Kamelid-Ersatz). Schaf/Ziege bleiben PROZEDURAL
+// (InstancedMesh, kein CC0-Schaf verfügbar — models/animals/LICENSE-CC0.md);
+// der alte prozedurale Esel ("sieht nicht gut aus" — Marc) entfällt.
+// B1: useGLTF(path, true) + useAnimations, gemischte Clips (meist Idle/Eating,
+// gelegentlich Walk auf kurzer Strecke), Eigenzeit-Offset je Instanz (kein Chor).
+// B3: Skalierung per BBox-Messung + Schulter-Knochen des Rigs (nicht raten):
+// Esel ~1,1 m Schulter, Kuh ~1,3 m, Alpaka ~0,9 m.
+// B4: low-Tier 1 je Asset-Art, Schafe 6 (skeletal ist billig).
+// A2: Vorhof-Sperrzone (inCourtyardKeepout) gilt für ALLE Tier-Anker.
+// SkinnedMesh NICHT instanced — Draw Calls ≈ Primitives × Instanzen
+// (high: 8 Instanzen ≈ 60, low: 3 ≈ 22), kein castShadow.
+// Prozedural: InstancedMesh je Koerperteil, 2 Materialien, < 10 Draw Calls.
+// KEINE Menschengestalten.
 
 interface AnimalSpec {
   x: number;
   z: number;
   rotY: number;
   scale: number;
-  kind: 'sheep' | 'goat' | 'donkey';
+  kind: 'sheep' | 'goat';
 }
 
 // Deterministischer Zufall (stabile Herde über Reloads)
@@ -48,8 +58,9 @@ function generateHerd(): AnimalSpec[] {
     const ringR = 26 + rand() * 10;
     const x = Math.sin(ringA) * ringR;
     const z = 22.5 + Math.cos(ringA) * ringR;
-    // Vorhof-Umfeld + Ostkeil (Platz des Volkes) frei lassen
-    if (x > -13 && x < 13 && z > -2 && z < 47) return false;
+    // A2: Vorhof-Sperr-Kasten (SPEC-marc-feedback2) — zusätzlich zur alten
+    // Vorhof-Nähe: |x| < 27 && z > -7 && z < 52 ist gesperrt
+    if (inCourtyardKeepout(x, z)) return false;
     const dz = z - 22.5;
     const dx = x;
     const r = Math.hypot(dx, dz);
@@ -68,7 +79,7 @@ function generateHerd(): AnimalSpec[] {
       x,
       z,
       rotY: rand() * Math.PI * 2,
-      scale: kind === 'donkey' ? 1.15 + rand() * 0.2 : 0.8 + rand() * 0.3,
+      scale: 0.8 + rand() * 0.3,
       kind,
     });
     return true;
@@ -77,13 +88,11 @@ function generateHerd(): AnimalSpec[] {
   const goats = Math.max(2, Math.round(q.sheep / 3));
   for (let i = 0; i < q.sheep - goats; i++) tryPlace('sheep');
   for (let i = 0; i < goats; i++) tryPlace('goat');
-  for (let i = 0; i < q.donkeys; i++) tryPlace('donkey');
   return animals;
 }
 
 // --- Geometrien (FORMtreu low-poly, Formen eingebacken; Schwan-
-//     stummel bzw. Eselschwanz+Bueschel direkt in die Koerper-/Schwanz-
-//     Geometrie gemergt, um Draw Calls zu sparen) ---
+//     stummel direkt in die Koerper-Geometrie gemergt, um Draw Calls zu sparen) ---
 const _tailStub = new THREE.ConeGeometry(0.05, 0.16, 5);
 _tailStub.rotateX(2.4);
 _tailStub.translate(0, 0.64, -0.7);
@@ -92,31 +101,16 @@ const bodyGeo = mergeGeometries([
   _tailStub,
 ])!;
 bodyGeo.scale(0.85, 0.72, 1.32); // abgeflachte Kapsel (Rumpf) + Schwanz-Stummel
-const donkeyBodyGeo = new THREE.SphereGeometry(0.5, 9, 7);
-donkeyBodyGeo.scale(0.95, 0.85, 1.45);
 const headGeo = new THREE.SphereGeometry(0.16, 8, 7);
 const snoutGeo = new THREE.ConeGeometry(0.085, 0.24, 6);     // Schnauze, abwaerts
-const legGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.55, 5); // Esel-Beine via Instanz-Scale
-const earGeo = new THREE.ConeGeometry(0.05, 0.17, 5);        // seitlich flach; Esel-Langohren via Instanz-Scale
-const donkeyTailGeo: THREE.BufferGeometry = (() => {
-  // Schwanz + Quasten-Bueschel als EINE Geometrie, Pivot an der Schwanzwurzel
-  // (0,0,0) — schwingt beim Schlagen um den Ansatz
-  const shaft = new THREE.CylinderGeometry(0.022, 0.014, 0.55, 5);
-  shaft.translate(0, -0.275, 0);
-  shaft.rotateX(0.35);
-  const tuft = new THREE.ConeGeometry(0.05, 0.16, 6);
-  tuft.rotateX(Math.PI);
-  tuft.translate(0, -0.6, -0.205);
-  return mergeGeometries([shaft, tuft])!;
-})();
+const legGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.55, 5); // Beine via Instanz-Scale
+const earGeo = new THREE.ConeGeometry(0.05, 0.17, 5);        // seitlich flach
 const hornGeo = new THREE.TorusGeometry(0.07, 0.016, 5, 8, Math.PI * 0.9); // Ziegenhorn
 const beardGeo = new THREE.ConeGeometry(0.035, 0.12, 5);     // Ziegenbart
-const maneGeo = new THREE.BoxGeometry(0.045, 0.09, 0.44);    // Esel-Maehne
 
-// --- Materialien (SPEC D: genau 3 neue) ---
+// --- Materialien (prozedurale Herde: 2 neue) ---
 const WOOL = new THREE.MeshLambertMaterial({ color: 0xE6DDC9 });  // Schafwolle hell
 const GOAT = new THREE.MeshLambertMaterial({ color: 0x5E432C });  // Ziege dunkelbraun
-const DONKEY = new THREE.MeshLambertMaterial({ color: 0x8A7E70 }); // Esel grau-braun
 
 // Lokale Bauteil-Definitionen (Tierblickrichtung: +z lokal)
 interface PartLocal {
@@ -141,21 +135,6 @@ const GOAT_HORN: PartLocal[] = [
   { p: [-0.07, 0.94, 0.56], r: [1.2, 0, -0.5] },
 ];
 const GOAT_BEARD: PartLocal = { p: [0, 0.6, 0.72], r: [2.9, 0, 0] };
-const DONKEY_BODY: PartLocal = { p: [0, 0.82, 0] };
-const DONKEY_HEAD: PartLocal = { p: [0, 1.12, 0.74], s: [1.2, 1.2, 1.2] };
-const DONKEY_SNOUT: PartLocal = { p: [0, 1.0, 0.98], r: [Math.PI / 2 - 0.3, 0, 0], s: [1.2, 1.3, 1.2] };
-const DONKEY_LEG_POS: Vec3[] = [
-  [0.28, 0.4, 0.5], [-0.28, 0.4, 0.5],
-  [0.28, 0.4, -0.5], [-0.28, 0.4, -0.5],
-];
-const DONKEY_LEG_SCALE: Vec3 = [1.2, 1.45, 1.2];
-const DONKEY_EAR_POS: { p: Vec3; r: Vec3 }[] = [
-  { p: [0.1, 1.3, 0.66], r: [-0.12, 0, 0.1] },
-  { p: [-0.1, 1.3, 0.66], r: [-0.12, 0, -0.1] },
-];
-const DONKEY_EAR_SCALE: Vec3 = [1.1, 2.0, 1.1];
-const DONKEY_MANE: PartLocal = { p: [0, 1.24, 0.45], r: [0.5, 0, 0] };
-const DONKEY_TAIL: PartLocal = { p: [0, 0.9, -0.78] }; // Pivot an der Schwanzwurzel
 
 // Instanz-Transform: Lokalwerte -> Welt (Yaw um die Tier-Achse + Skalierung)
 const _qYaw = new THREE.Quaternion();
@@ -238,30 +217,220 @@ function Batch({
 const _nodQ = new THREE.Quaternion();
 const _nodM = new THREE.Matrix4();
 const _nodV = new THREE.Vector3();
-const _nodV2 = new THREE.Vector3();
 const _tmpQ = new THREE.Quaternion();
 const _X_AXIS = new THREE.Vector3(1, 0, 0);
+
+// === SPEC-marc-feedback2 B: Quaternius-Assets (CC0, Draco, animiert) ===
+
+type GltfSpeciesKey = 'Donkey' | 'Cow' | 'Alpaca';
+
+interface GltfSpeciesCfg {
+  key: GltfSpeciesKey;
+  path: string;
+  shoulder: number; // Soll-Schulterhoehe in Metern (B3)
+  countHigh: number; // B2: 2-3 Instanzen je Art im HIGH-Tier
+}
+
+const GLB_ANIMALS: GltfSpeciesCfg[] = [
+  { key: 'Donkey', path: '/models/animals/Donkey.glb', shoulder: 1.1, countHigh: 3 },
+  { key: 'Cow', path: '/models/animals/Cow.glb', shoulder: 1.3, countHigh: 3 },
+  { key: 'Alpaca', path: '/models/animals/Alpaca.glb', shoulder: 0.9, countHigh: 2 }, // Kamelid-Ersatz
+];
+const GLB_BY_KEY: Record<GltfSpeciesKey, GltfSpeciesCfg> = {
+  Donkey: GLB_ANIMALS[0],
+  Cow: GLB_ANIMALS[1],
+  Alpaca: GLB_ANIMALS[2],
+};
+
+const IS_LOW_TIER = detectQuality() === 'low';
+
+interface GltfAnchor {
+  species: GltfSpeciesKey;
+  x: number;
+  z: number;
+  rotY: number;
+  mode: 'idle' | 'eat' | 'walk';
+  offset: number; // Eigenzeit-Offset (kein Choreographie-Chor)
+}
+
+function generateGltfAnchors(): GltfAnchor[] {
+  const rand = mulberry32(51503);
+  const anchors: GltfAnchor[] = [];
+  for (const cfg of GLB_ANIMALS) {
+    // B4: low-Tier 1 je Asset-Art (Animationen bleiben, skeletal ist billig)
+    const count = IS_LOW_TIER ? 1 : cfg.countHigh;
+    for (let i = 0; i < count; i++) {
+      for (let tries = 0; tries < 300; tries++) {
+        // B5: in Herden-Nähe — gleicher offener Ring wie die prozedurale Herde
+        const ringA = rand() * Math.PI * 2;
+        const ringR = 26 + rand() * 10;
+        const x = Math.sin(ringA) * ringR;
+        const z = 22.5 + Math.cos(ringA) * ringR;
+        // A2: Vorhof-Sperr-Kasten — es reicht NICHT, nur die Zelt-Anker
+        // abzuklopfen, der Kasten wird zusätzlich geprüft
+        if (inCourtyardKeepout(x, z)) continue;
+        const dz = z - 22.5;
+        if (dz < 0 && Math.abs(x) < Math.hypot(x, dz) * 0.55) continue; // Ostkeil
+        let blocked = false;
+        for (const t of TENT_SPECS) {
+          if (Math.hypot(t.x - x, t.z - z) < 3) {
+            blocked = true;
+            break;
+          }
+        }
+        if (!blocked) {
+          for (const o of anchors) {
+            if (Math.hypot(o.x - x, o.z - z) < 3.5) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+        if (blocked) continue;
+        anchors.push({
+          species: cfg.key,
+          x,
+          z,
+          rotY: rand() * Math.PI * 2,
+          // B1: meist Idle/Eating, nur die 3. Instanz einer Art (falls
+          // vorhanden) geht gelegentlich auf kurzer Strecke (Walk)
+          mode: count >= 3 && i === 2 ? 'walk' : i % 2 === 1 ? 'eat' : 'idle',
+          offset: rand() * 10,
+        });
+        break;
+      }
+    }
+  }
+  return anchors;
+}
+
+// Modul-Daten (einmalig, deterministisch)
+export const GLTF_ANCHORS = generateGltfAnchors();
+
+// A3-Verifikation (Assert-artiger Check): KEIN Tier-Anker (GLB UND prozedural)
+// innerhalb der Vorhof-Sperrzone.
+for (const a of GLTF_ANCHORS) {
+  if (inCourtyardKeepout(a.x, a.z)) {
+    console.error('[Animals] ASSERT: Tier-Anker im Vorhof-Sperrkasten!', a);
+  }
+}
+
+// B1: EINE Instanz pro Komponente → EIGENES AnimationMixer + Eigenzeit-Offset.
+// useAnimations bindet den Mixer an die Gruppen-Ref; der SkeletonUtils-Klon
+// (SkinnedMesh + Bones) hängt als <primitive> darin.
+function GltfAnimal({ cfg, anchor }: { cfg: GltfSpeciesCfg; anchor: GltfAnchor }) {
+  const { scene, animations } = useGLTF(cfg.path, true); // true = Draco
+  const group = useRef<THREE.Group>(null);
+  const { actions } = useAnimations(animations, group);
+
+  // B3: Skalierung AM ASSET messen (scene.traverse -> BBox; Schulterhöhe vom
+  // Schulter-Knochen des Quaternius-Rigs ablesen), Faktor ableiten — NICHT raten.
+  const metrics = useMemo(() => {
+    scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(scene);
+    const height = Math.max(0.001, box.max.y - box.min.y);
+    const shoulderBone =
+      scene.getObjectByName('FrontShoulder.L') ?? scene.getObjectByName('FrontShoulder.R');
+    const v = new THREE.Vector3();
+    const shoulderY = shoulderBone
+      ? shoulderBone.getWorldPosition(v).y
+      : height * 0.78; // Fallback: Widerrist ≈ 0,78 der Gesamthöhe (Kopf/Ohren ragen darüber)
+    const scale = cfg.shoulder / shoulderY;
+    // Blickrichtung ableiten (keine Annahme): Kopf weiter in +z als Schwanz
+    const head = scene.getObjectByName('Head');
+    const tail = scene.getObjectByName('Tail1');
+    const facesPlusZ = head && tail
+      ? head.getWorldPosition(v).z > tail.getWorldPosition(v).z
+      : true;
+    return { scale, facesPlusZ, groundY: -box.min.y * scale };
+  }, [scene, cfg.shoulder]);
+
+  // SkinnedMesh kann NICHT instanced werden → SkeletonUtils-Klon je Instanz
+  const clone = useMemo(() => skeletonClone(scene), [scene]);
+
+  // B1: gemischter Clip + Eigenzeit-Offset (kein Chor)
+  useEffect(() => {
+    const clipName =
+      anchor.mode === 'walk' ? 'Walk' : anchor.mode === 'eat' ? 'Eating' : 'Idle';
+    const action = actions[clipName] ?? actions['Idle'];
+    if (!action) return;
+    action.reset();
+    action.play();
+    action.time = anchor.offset % Math.max(0.001, action.getClip().duration);
+    return () => {
+      action.stop();
+    };
+  }, [actions, anchor.mode, anchor.offset]);
+
+  // Walk-Instanz: kurze Strecke (Ping-Pong), Drehung an den Enden
+  const walkState = useRef({ p: 0, v: 1, len: 4.5 });
+  const baseFacing = anchor.rotY + (metrics.facesPlusZ ? 0 : Math.PI);
+  useFrame((_, dt) => {
+    if (anchor.mode !== 'walk') return;
+    const g = group.current;
+    if (!g) return;
+    const s = walkState.current;
+    s.p += s.v * 0.75 * Math.min(dt, 0.1);
+    if (s.p > s.len) {
+      s.p = s.len;
+      s.v = -1;
+    }
+    if (s.p < 0) {
+      s.p = 0;
+      s.v = 1;
+    }
+    g.rotation.y = s.v > 0 ? baseFacing : baseFacing + Math.PI;
+    g.position.x = anchor.x + Math.sin(baseFacing) * s.p;
+    g.position.z = anchor.z + Math.cos(baseFacing) * s.p;
+  });
+
+  return (
+    <group
+      ref={group}
+      position={[anchor.x, metrics.groundY, anchor.z]}
+      rotation={[0, baseFacing, 0]}
+      scale={metrics.scale}
+    >
+      <primitive object={clone} />
+    </group>
+  );
+}
+
+function GltfHerd() {
+  return (
+    <group>
+      {GLTF_ANCHORS.map((a, i) => (
+        <GltfAnimal key={`${a.species}-${i}`} cfg={GLB_BY_KEY[a.species]} anchor={a} />
+      ))}
+    </group>
+  );
+}
 
 export function Animals() {
   const animals = useMemo(generateHerd, []);
 
-  const { sheep, goats, donkeys } = useMemo(() => {
+  // A3-Verifikation (Assert): auch die prozedurale Herde liegt nicht in
+  // der Vorhof-Sperrzone (GLB-Anker werden module-level geprüft).
+  for (const a of animals) {
+    if (inCourtyardKeepout(a.x, a.z)) {
+      console.error('[Animals] ASSERT: Herde im Vorhof-Sperrkasten!', a);
+    }
+  }
+
+  const { sheep, goats } = useMemo(() => {
     return {
       sheep: animals.filter((a) => a.kind === 'sheep'),
       goats: animals.filter((a) => a.kind === 'goat'),
-      donkeys: animals.filter((a) => a.kind === 'donkey'),
     };
   }, [animals]);
 
-  // Refs fuer die animierten Teile (Koepfe je Spezies, Eselschwaenze)
+  // Refs fuer die animierten Teile (Koepfe je Spezies)
   const headRefs = {
     sheep: useRef<THREE.InstancedMesh>(null),
     goat: useRef<THREE.InstancedMesh>(null),
   };
-  const tailRef = useRef<THREE.InstancedMesh>(null);
 
-  // Minimal-Animation (SPEC D): 2-3 Koepfe nicken (Phasen versetzt),
-  // 1-2 Esel schlagen mit dem Schwanz. Kein Laufen.
+  // Minimal-Animation (SPEC D): 2-3 Koepfe nicken (Phasen versetzt)
   const animated = useMemo(() => {
     const heads: { mesh: 'sheep' | 'goat'; index: number; qYaw: THREE.Quaternion; pos: THREE.Vector3; scale: THREE.Vector3; phase: number }[] = [];
     partInstances(sheep, SHEEP_HEAD).forEach((h, i) => {
@@ -270,9 +439,8 @@ export function Animals() {
     partInstances(goats, SHEEP_HEAD).forEach((h, i) => {
       if (i < 1) heads.push({ mesh: 'goat', index: i, qYaw: h.qYaw, pos: new THREE.Vector3(...(h.t.position as Vec3)), scale: new THREE.Vector3(...(h.t.scale as Vec3)), phase: 2.6 });
     });
-    const tails = partInstances(donkeys, DONKEY_TAIL).slice(0, 2);
-    return { heads, tails };
-  }, [sheep, goats, donkeys]);
+    return { heads };
+  }, [sheep, goats]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -285,21 +453,10 @@ export function Animals() {
       mesh.setMatrixAt(h.index, _nodM);
       mesh.instanceMatrix.needsUpdate = true;
     }
-    animated.tails.forEach((tail, i) => {
-      const mesh = tailRef.current;
-      if (!mesh) return;
-      const swish = Math.sin(t * 1.4 + i * 2.2) * 0.3;
-      _nodQ.setFromAxisAngle(_X_AXIS, swish);
-      _nodV.set(...(tail.t.position as Vec3));
-      _nodM.compose(_nodV, _tmpQ.copy(tail.qYaw).multiply(_nodQ), _nodV2.set(...(tail.t.scale as Vec3)));
-      mesh.setMatrixAt(i, _nodM);
-      mesh.instanceMatrix.needsUpdate = true;
-    });
   });
 
-  // Bauteil-Batches (Draw Calls: 3 Koerper + 3 Koepfe + 1 Schnauze + 1 Beine
-  // + 1 Ohren hell + 1 Ohren dunkel + 1 Eselschwaenze + 1 Hoerner/Bart
-  // + 1 Maehne = 13 < 15)
+  // Bauteil-Batches (Draw Calls: 2 Koerper + 2 Koepfe + 1 Schnauze + 1 Beine
+  // + 1 Ohren hell + 1 Ohren dunkel + 1 Hoerner/Bart = 9 < 15)
   const woolEars = useMemo(() => [...partInstances(sheep, SHEEP_EAR[0]), ...partInstances(sheep, SHEEP_EAR[1])], [sheep]);
   const goatEars = useMemo(() => [...partInstances(goats, SHEEP_EAR[0]), ...partInstances(goats, SHEEP_EAR[1])], [goats]);
   const legs = useMemo(() => {
@@ -311,50 +468,32 @@ export function Animals() {
       ...partInstances(all.filter((_, i) => i % 4 === 3), SHEEP_LEG[3]),
     ].map((x) => x.t);
   }, [sheep, goats]);
-  const donkeyLegs = useMemo(() => {
-    const all: AnimalSpec[] = [];
-    for (const a of donkeys) {
-      for (const p of DONKEY_LEG_POS) {
-        all.push({ ...a });
-      }
-    }
-    return all.map((a, i) =>
-      partInstances([a], { p: DONKEY_LEG_POS[i % 4], s: DONKEY_LEG_SCALE })[0].t
-    );
-  }, [donkeys]);
 
   return (
     <group>
+      {/* === GLB-Tiere (Esel/Kuh/Alpaca, animiert, B) === */}
+      <GltfHerd />
+
       {/* Koerper (je Spezies 1 InstancedMesh; Schafschwanz-Stummel eingebacken) */}
       <Batch geometry={bodyGeo} material={WOOL} transforms={useMemo(() => partInstances(sheep, SHEEP_BODY).map((x) => x.t), [sheep])} />
       <Batch geometry={bodyGeo} material={GOAT} transforms={useMemo(() => partInstances(goats, GOAT_BODY).map((x) => x.t), [goats])} />
-      <Batch geometry={donkeyBodyGeo} material={DONKEY} transforms={useMemo(() => partInstances(donkeys, DONKEY_BODY).map((x) => x.t), [donkeys])} />
 
       {/* Koepfe (animiert: sanftes Nicken) */}
       <Batch geometry={headGeo} material={WOOL} transforms={useMemo(() => partInstances(sheep, SHEEP_HEAD).map((x) => x.t), [sheep])} meshRef={headRefs.sheep} />
       <Batch geometry={headGeo} material={GOAT} transforms={useMemo(() => partInstances(goats, SHEEP_HEAD).map((x) => x.t), [goats])} meshRef={headRefs.goat} />
-      <Batch geometry={headGeo} material={DONKEY} transforms={useMemo(() => partInstances(donkeys, DONKEY_HEAD).map((x) => x.t), [donkeys])} />
 
       {/* Schnauzen (leicht abwaerts geneigt) */}
       <Batch geometry={snoutGeo} material={GOAT} transforms={useMemo(() => [
         ...partInstances(sheep, SHEEP_SNOUT).map((x) => x.t),
         ...partInstances(goats, SHEEP_SNOUT).map((x) => x.t),
-        ...partInstances(donkeys, DONKEY_SNOUT).map((x) => x.t),
-      ], [sheep, goats, donkeys])} />
+      ], [sheep, goats])} />
 
       {/* Beine (alle Tiere, EIN Batch, dunkles Beinmaterial) */}
-      <Batch geometry={legGeo} material={GOAT} transforms={[...legs, ...donkeyLegs]} />
+      <Batch geometry={legGeo} material={GOAT} transforms={legs} />
 
-      {/* Ohren: hell (Schafe) + dunkel (Ziegen + Esel-Langohren via Scale) */}
+      {/* Ohren: hell (Schafe) + dunkel (Ziegen) */}
       <Batch geometry={earGeo} material={WOOL} transforms={woolEars.map((x) => x.t)} />
-      <Batch geometry={earGeo} material={GOAT} transforms={useMemo(() => [
-        ...goatEars.map((x) => x.t),
-        ...donkeys.flatMap((a) => DONKEY_EAR_POS.map((e) =>
-          partInstances([a], { p: e.p, r: e.r, s: DONKEY_EAR_SCALE })[0].t)),
-      ], [goats, donkeys])} />
-
-      {/* Esel-Schwaenze mit Quasten-Bueschel (eine Geometrie, animiert) */}
-      <Batch geometry={donkeyTailGeo} material={GOAT} transforms={useMemo(() => partInstances(donkeys, DONKEY_TAIL).map((x) => x.t), [donkeys])} meshRef={tailRef} />
+      <Batch geometry={earGeo} material={GOAT} transforms={goatEars.map((x) => x.t)} />
 
       {/* Ziegen: Hoerner + Bart (EIN Batch) */}
       <Batch geometry={hornGeo} material={GOAT} transforms={useMemo(() => [
@@ -362,9 +501,6 @@ export function Animals() {
         ...partInstances(goats, GOAT_HORN[1]).map((x) => x.t),
         ...partInstances(goats, GOAT_BEARD).map((x) => x.t),
       ], [goats])} />
-
-      {/* Esel: Maehnen-Streifen auf dem Hals-Ruecken */}
-      <Batch geometry={maneGeo} material={GOAT} transforms={useMemo(() => partInstances(donkeys, DONKEY_MANE).map((x) => x.t), [donkeys])} />
     </group>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { create } from 'zustand';
@@ -295,6 +295,7 @@ export function GameUI() {
   const togglePause = useGameStore((s) => s.togglePause);
   const setSettings = useGameStore((s) => s.setSettings);
   const settings = useGameStore((s) => s.settings);
+  const [menuHover, setMenuHover] = useState(false);
 
   // Write slider values to the audio GainNodes (setTargetAtTime gegen
   // Zipper-Noise bei schnellen Slider-Bewegungen)
@@ -310,37 +311,47 @@ export function GameUI() {
   }, [settings]);
 
   if (!isPaused) {
+    // SPEC-marc-feedback2 D: dezenter, halbtransparenter Menü-Button oben
+    // RECHTS (max ~40 px, opacity 0.55 / hover 0.9, KEIN dunkler Kasten).
+    // Klick = gleiches togglePause; ESC-Hinweis nur als title-Tooltip.
+    // Die Joystick-Fläche (unten links) bleibt frei.
     return (
       <div style={{
-        position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)',
+        position: 'absolute', top: '12px', right: '16px',
         zIndex: 500,
         display: 'flex', alignItems: 'center', gap: '10px',
       }}>
-        <div style={{
-          background: 'rgba(0, 0, 0, 0.7)',
-          padding: '15px 25px',
-          borderRadius: '10px',
-          color: '#FFD700',
-          fontFamily: 'Georgia, serif',
-          fontSize: '14px',
-          cursor: 'pointer',
-          border: '1px solid #D4AF37',
-        }} onClick={togglePause}>
-          ⏸ Pause (ESC)
-        </div>
         {useGameStore.getState().quality === 'low' && (
           <div style={{
-            background: 'rgba(0, 0, 0, 0.55)',
-            padding: '6px 12px',
-            borderRadius: '8px',
             color: '#C9C2A0',
             fontFamily: 'Georgia, serif',
             fontSize: '11px',
-            border: '1px solid rgba(212, 175, 55, 0.35)',
+            opacity: 0.55,
           }}>
             ⚡ Leicht-Modus
           </div>
         )}
+        <button
+          onClick={togglePause}
+          title="Menü öffnen (ESC)"
+          onMouseEnter={() => setMenuHover(true)}
+          onMouseLeave={() => setMenuHover(false)}
+          style={{
+            height: '32px', maxHeight: '40px',
+            padding: '0 12px',
+            display: 'flex', alignItems: 'center', gap: '6px',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '8px',
+            color: '#E8D5B7',
+            fontFamily: 'Georgia, serif',
+            fontSize: '14px',
+            cursor: 'pointer',
+            opacity: menuHover ? 0.9 : 0.55,
+          }}
+        >
+          ☰ Menü
+        </button>
       </div>
     );
   }

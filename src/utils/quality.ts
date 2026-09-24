@@ -16,8 +16,7 @@ export interface QualitySettings {
   clouds: number;
   cloudOpacity: number;
   stones: number;
-  sheep: number; // Schafe + Ziegen
-  donkeys: number;
+  sheep: number; // Schafe + Ziegen (prozedural; Esel/Kuh/Alpaca = GLB-Assets)
   birds: number; // Geier am Horizont
   smokeColumns: number;
 }
@@ -36,7 +35,6 @@ export const QUALITY_SETTINGS: Record<QualityTier, QualitySettings> = {
     cloudOpacity: 1,
     stones: 56,
     sheep: 15,
-    donkeys: 4,
     birds: 4,
     smokeColumns: 5,
   },
@@ -53,7 +51,6 @@ export const QUALITY_SETTINGS: Record<QualityTier, QualitySettings> = {
     cloudOpacity: 0.8,
     stones: 20,
     sheep: 6,
-    donkeys: 2,
     birds: 2,
     smokeColumns: 3,
   },

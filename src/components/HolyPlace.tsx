@@ -296,6 +296,14 @@ function RoofLayers() {
   // d) Tachasch-Felle (dunkel)
   // 1 Ellen Überhang vorn (Osten, z = 31,5), hinten hängt die halbe Decke (Ex 26,9.12-13)
   // Hängetau + Bronzepflöcke an der Aussenkante der Ziegenhaardecke (Ex 27,19), je 5 pro Seite
+  //
+  // SPEC-marc-feedback2 E: die 3 äußeren Lagen als SICHTBARE Stapel-Lagen —
+  // je Schicht breiter UND höher (Versatz), sodass von außen Kanten/Abstufungen
+  // als Bänder lesbar sind: Ziegenhaar (dunkelbraun-grau, Webstruktur) übersteht
+  // die Byssus-Schicht rundum (hinten halber Teppich, seitlich je 1 Elle,
+  // Ex 26,12-13), dann das rotbraune Widderfell-Band, oben die dunkle
+  // Leder-Lage (Tachasch). Material-Tints auf burlap/goatHair-Basis
+  // (materials.ts) — KEINE neuen Materialien nötig. Biblische Maße unverändert.
   const frontOverhang = CUBIT;
   // A3 (Ex 26,1-14): Schicht a (Byssus/Cherubim) ist die INNENDECKE — von
   // aussen unsichtbar. Ihre Box liegt daher VOLL innerhalb der Goldbalken
@@ -304,9 +312,9 @@ function RoofLayers() {
   // hinter den Balken (w < Balken-Aussenkante 4,62).
   const layers = [
     { w: 4.4, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
-    { w: 5.35, t: 0.04, back: 45.6, y: 4.56, mat: GOAT_HAIR, inner: false },
-    { w: 5.8, t: 0.04, back: 45.9, y: 4.61, mat: RAM_SKIN, inner: false },
-    { w: 6.25, t: 0.05, back: 46.2, y: 4.66, mat: TACHASH, inner: false },
+    { w: 5.35, t: 0.05, back: 45.6, y: 4.59, mat: GOAT_HAIR, inner: false },
+    { w: 5.8, t: 0.05, back: 45.9, y: 4.7, mat: RAM_SKIN, inner: false },
+    { w: 6.25, t: 0.06, back: 46.2, y: 4.83, mat: TACHASH, inner: false },
   ];
   const goatHair = layers[1];
   const ropeZs = Array.from({ length: 5 }, (_, i) => 32 + i * 3.25);
@@ -335,7 +343,9 @@ function RoofLayers() {
       <Instanced geometry={roofRopeGeo} material={ROPE} transforms={roofRopes} />
 
       {layers.map((l, i) => {
-        const front = TENT_Z_START - frontOverhang - i * 0.05;
+        // E: Front-Versatz gestaffelt (0,12 m je Lage) — die Überstände
+        // lesen sich als sichtbare Kanten von der Seite/vorn
+        const front = TENT_Z_START - frontOverhang - i * 0.12;
         const len = l.back - front;
         const zCenter = (front + l.back) / 2;
         return (

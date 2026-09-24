@@ -104,28 +104,65 @@ function registerWeaveOverlay(
   });
 }
 
-// C2: weiche vertikale Farbverlaeufe statt harter Streifenkanten — jede Farbe
-// haelt ein Plateau, Uebergänge smoothstep-weit veraufend (blurFrac der
-// Streifenbreite).
-function fillSoftStripes(
+// SPEC-marc-feedback2 F: GEWIRKTE FARBFLÄCHEN statt vertikaler Streifen
+// (Marc-Entscheidung 24.09.): große, weich überblendete Farb-Flecken/Bahnen —
+// 2-3 übergroße radiale bzw. diagonale Farbfelder JE Farbe (Grundton + Felder
+// der übrigen Farben), darüber feine Web-Struktur (addWeaveStripes) und
+// Cherubim-Silhouetten wo biblisch. Ziel: wie ein echter Figurenstoff —
+// KEINE erkennbare Streifenrichtung, keine harten Kanten, antik gedeckt.
+function hexToRgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function fillWovenFields(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  colors: string[],
-  blurFrac = 0.35
+  colors: string[]
 ) {
-  const n = colors.length;
-  const blur = blurFrac / (2 * n);
-  const g = ctx.createLinearGradient(0, 0, w, 0);
-  g.addColorStop(0, colors[0]);
-  for (let i = 1; i < n; i++) {
-    const b = i / n;
-    g.addColorStop(b - blur, colors[i - 1]);
-    g.addColorStop(b + blur, colors[i]);
-  }
-  g.addColorStop(1, colors[n - 1]);
-  ctx.fillStyle = g;
+  // Deterministischer Zufall (stabile Texturen über Reloads); Seed je Canvas
+  // abweichend, damit Tor/Parochet/Schirm/Dach nicht identische Felder zeigen
+  let seed = (0x57123 ^ Math.imul(w, 131) ^ Math.imul(h, 31)) >>> 0;
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  // Grundton
+  ctx.fillStyle = colors[0];
   ctx.fillRect(0, 0, w, h);
+  const span = Math.max(w, h) * 1.4;
+  for (let i = 1; i < colors.length; i++) {
+    // 2-3 übergroße radiale Farbfelder je Farbe, weich auslaufend
+    const fields = 2 + Math.floor(rand() * 2);
+    for (let k = 0; k < fields; k++) {
+      const cx = rand() * w;
+      const cy = rand() * h;
+      const r = (0.45 + rand() * 0.45) * span;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, hexToRgba(colors[i], 0.75));
+      g.addColorStop(0.6, hexToRgba(colors[i], 0.4));
+      g.addColorStop(1, hexToRgba(colors[i], 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    // 1 diagonale Bahn je Farbe, Richtung je Feld NEU gewürfelt —
+    // dadurch entsteht keine erkennbare Streifenrichtung
+    const ang = rand() * Math.PI * 2;
+    const x0 = rand() * w;
+    const y0 = rand() * h;
+    const g2 = ctx.createLinearGradient(
+      x0,
+      y0,
+      x0 + Math.cos(ang) * span,
+      y0 + Math.sin(ang) * span
+    );
+    g2.addColorStop(0, hexToRgba(colors[i], 0));
+    g2.addColorStop(0.5, hexToRgba(colors[i], 0.5));
+    g2.addColorStop(1, hexToRgba(colors[i], 0));
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, w, h);
+  }
 }
 
 // --- Sand / Erde (Wuestenboden ausserhalb des Vorhofs) ---
@@ -459,20 +496,15 @@ function drawCherubim(
   ctx.fill();
 }
 
-// Helligkeit eines Hex-Farbwerts (für hell/dunkel-Absetzung der Wirkerei)
-function hexLuma(hex: string): number {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-// D1/C2: Wirkerei-Silhouette je nach Untergrund hell/dunkel abgesetzt —
-// immer in einer der 4 Stofffarben (Byssus-Hell auf dunklem Feld,
-// Violett-Tiefe auf hellem Feld).
-function tapestryColor(fieldHex: string): string {
-  return hexLuma(fieldHex) > 0.5
+// Helligkeit eines Pixels (für hell/dunkel-Absetzung der Wirkerei) — die
+// Feldfarbe wird direkt aus dem Gewebe-Sampling gelesen (F: keine Streifen-
+// Geometrie mehr, aus der man eine Feldfarbe ableiten könnte).
+function tapestryColorAt(ctx: CanvasRenderingContext2D, x: number, y: number): string {
+  const px = Math.max(0, Math.min(ctx.canvas.width - 1, x | 0));
+  const py = Math.max(0, Math.min(ctx.canvas.height - 1, y | 0));
+  const d = ctx.getImageData(px, py, 1, 1).data;
+  const luma = (0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2]) / 255;
+  return luma > 0.5
     ? 'rgba(107,45,91,0.55)'   // Violett-Silhouette auf hellem Feld
     : 'rgba(232,223,200,0.5)'; // Byssus-Hell-Silhouette auf dunklem Feld
 }
@@ -497,14 +529,14 @@ function addWeaveStripes(
   }
 }
 
-// --- Tor des Vorhofs: 4 Streifen blau/violett/scharlach/byssus (Ex 27,16)
-// A1: KEINE Cherubim (Ex 27,16 nennt keine). A2: 4 Farben als Wirkerei mit
-// weichen Uebergaengen + feinen Web-Streifen in den Farbfeldern
-// (Kunstweber-Look); die Gewebe-Textur wird nach dem Laden ueberblendet. ---
+// --- Tor des Vorhofs: bunt gewirkte Decke blau/violett/scharlach/byssus
+// (Ex 27,16). A1: KEINE Cherubim (Ex 27,16 nennt keine). F: gewirkte
+// FARBFLÄCHEN (fillWovenFields) + feine Web-Struktur — keine Streifenrichtung
+// erkennbar; die Gewebe-Textur wird nach dem Laden ueberblendet. ---
 function makeGate(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  fillSoftStripes(ctx, 256, 256, [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE]);
-  // feine Web-Streifen in den Farbfeldern (Canvas-eigene Basis, bis das
+  fillWovenFields(ctx, 256, 256, [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE]);
+  // feine Web-Struktur in den Farbfeldern (Canvas-eigene Basis, bis das
   // Weave-Bild laedt)
   addWeaveStripes(ctx, 256, 256, 4);
   const t = new THREE.CanvasTexture(c);
@@ -515,32 +547,29 @@ function makeGate(): THREE.CanvasTexture {
 }
 
 // --- Parochet: 4 Farben + Cherubim-Wirkerei (Ex 26,31) ---
-// D1: Antik-Palette, weiche Uebergaenge, Cherubim als flaeche Wirkerei-
-// Silhouetten in Stofffarben (hell auf dunklem Feld, dunkel auf hellem
-// Feld), gleichmaessig wiederholt; Byssus-Grundstoff = fabric-weave
-// (Overlay nach Bild-Laden + als Material-Map). ---
-const VEIL_STRIPE_COLORS = [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE];
+// D1: Antik-Palette, F: gewirkte Farbflächen (fillWovenFields), Cherubim als
+// flaeche Wirkerei-Silhouetten in Stofffarben (hell auf dunklem Feld, dunkel
+// auf hellem Feld, Feldfarbe per Pixel-Sampling), gleichmaessig wiederholt;
+// Byssus-Grundstoff = fabric-weave (Overlay nach Bild-Laden + als Material-Map). ---
+const VEIL_COLORS = [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, BYSSUS_TONE];
 function makeVeil(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  fillSoftStripes(ctx, 256, 256, VEIL_STRIPE_COLORS);
+  fillWovenFields(ctx, 256, 256, VEIL_COLORS);
   // Byssus-Basis: feines Leinenraster über allen Feldern
   addWeaveStripes(ctx, 256, 256, 3);
   // D1: Wirkerei-Raster — Cherubim-Silhouetten in Stofffarben, abgesetzt
   // vom lokalen Farbfeld (hell auf dunkel, dunkel auf hell), versetzt
-  // ueber alle 4 Farbfelder
+  // über die ganze Flaeche
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 4; col++) {
       const cx = col * 64 + (row % 2 === 0 ? 24 : 44);
       const cy = row * 60 + 40;
-      const field = VEIL_STRIPE_COLORS[Math.min(3, Math.floor(cx / 64))];
-      drawCherubim(ctx, cx, cy, 0.5, tapestryColor(field));
+      drawCherubim(ctx, cx, cy, 0.5, tapestryColorAt(ctx, cx, cy));
     }
   }
   // grosse Cherubim im mittleren Band (Hauptwirkerei, Stofffarben)
-  const fieldL = VEIL_STRIPE_COLORS[Math.floor(116 / 64)];
-  const fieldR = VEIL_STRIPE_COLORS[Math.floor(196 / 64)];
-  drawCherubim(ctx, 116, 150, 0.95, tapestryColor(fieldL));
-  drawCherubim(ctx, 196, 150, 0.95, tapestryColor(fieldR));
+  drawCherubim(ctx, 116, 150, 0.95, tapestryColorAt(ctx, 116, 150));
+  drawCherubim(ctx, 196, 150, 0.95, tapestryColorAt(ctx, 196, 150));
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   registerWeaveOverlay(c, ctx, t, 0.35);
@@ -673,31 +702,29 @@ function makeBronze(): THREE.CanvasTexture {
 // --- Unterseite der Byssus-Decke (Ex 26,1: 10 Vorhaenge) ---
 // C1: 4-Farben-Flaeche statt Byssus-dominant: feines Leinen (0xE8DFC8) als
 // Grundton, darauf flaeche Wirkerei-Bahnen in Blau/Violett/Karmesin (je
-// Teppich-Bahn ein Farbcharakter), weich ueberblendet, antik gedeckt
-// (Byssus-Schleier darueber). C2: Cherubim-Silhouetten eingewebt — mehrere
-// flaeche Figuren in Stofffarben, wiederholt ueber die ganze Flaeche.
+// Teppich-Bahn ein Farbcharakter), antik gedeckt (Byssus-Schleier darueber).
+// F: GEWIRKTE FARBFLÄCHEN (fillWovenFields) statt Bahnen-Streifen; die 10
+// Nähte bleiben als dezente Bahnen-Andeutung (ohne Streifenrichtung).
+// C2: Cherubim-Silhouetten eingewebt — mehrere flaeche Figuren in Stofffarben,
+// wiederholt ueber die ganze Flaeche.
 // C3: 10 vertikale Naehte + blaue Schlaufen-Perforation oben (Ex 26,4). ---
 function makeUnderRoof(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(512, 256);
-  // 10 Teppich-Bahnen, abwechselnd in den 3 Farb-Stoffen (Byssus als Grund)
-  const bays = 10;
-  const bayColors = [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET, ANTIQUE_PURPLE];
-  const stripes: string[] = [];
-  for (let i = 0; i < bays; i++) stripes.push(bayColors[i % bayColors.length]);
-  fillSoftStripes(ctx, 512, 256, stripes, 0.3);
+  // 3 Farb-Stoffe als gewirkte Felder (Byssus als Grundton)
+  fillWovenFields(ctx, 512, 256, [ANTIQUE_BLUE, ANTIQUE_PURPLE, ANTIQUE_SCARLET]);
   // antik gedeckt: Byssus-Schleier ueber den Farbfeldern
   ctx.fillStyle = 'rgba(232,223,200,0.26)';
   ctx.fillRect(0, 0, 512, 256);
-  // feine Web-Streifen in den Farbfeldern (Kunstweber-Look)
+  // feine Web-Struktur in den Farbfeldern (Kunstweber-Look)
   addWeaveStripes(ctx, 512, 256, 4);
   // C2: Cherubim-Wirkerei-Muster — wiederholt, verteilt ueber die Flaeche
   // (nicht nur Rand), Silhouetten in Stofffarben abgesetzt vom Untergrund
+  // (Feldfarbe per Pixel-Sampling NACH dem Byssus-Schleier)
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 5; col++) {
       const cx = col * 102.4 + 51 + (row % 2 === 0 ? 0 : 51.2);
       const cy = row * 78 + 66;
-      const field = stripes[Math.min(9, Math.floor((cx / 512) * bays))];
-      drawCherubim(ctx, cx % 512, cy, 0.55, tapestryColor(field));
+      drawCherubim(ctx, cx % 512, cy, 0.55, tapestryColorAt(ctx, cx % 512, cy));
     }
   }
   // dezente vertikale Nähte: Andeutung der 10 einzelnen Deckteppiche
@@ -717,17 +744,17 @@ function makeUnderRoof(): THREE.CanvasTexture {
   return t;
 }
 
-// --- Eingangsschirm des Heiligen: 5 Streifen (Ex 26,36) ---
-// B1: KEINE Cherubim (Ex 26,36: nur "bunt gewebt"). B2: Antik-Palette,
-// weiche Uebergaenge, feine Web-Streifen (Kunstweber-Look), Gewebe-Overlay.
+// --- Eingangsschirm des Heiligen (Ex 26,36) ---
+// B1: KEINE Cherubim (Ex 26,36: nur "bunt gewebt"). B2: Antik-Palette.
+// F: gewirkte Farbflächen (fillWovenFields) + feine Web-Struktur,
+// Gewebe-Overlay.
 function makeScreen(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  fillSoftStripes(ctx, 256, 256, [
+  fillWovenFields(ctx, 256, 256, [
     ANTIQUE_BLUE,
     ANTIQUE_PURPLE,
     ANTIQUE_SCARLET,
     BYSSUS_TONE,
-    ANTIQUE_BLUE,
   ]);
   addWeaveStripes(ctx, 256, 256, 4);
   const t = new THREE.CanvasTexture(c);

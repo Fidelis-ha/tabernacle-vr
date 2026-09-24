@@ -116,15 +116,20 @@ function Dunes() {
   );
 }
 
-// Debug-Kamera-Hook: ?debugcam=1 haengt camera+scene+renderer an window (Verifikation/Tests).
+// Debug-Kamera-Hook: ?debugcam=1 haengt camera+scene+renderer an window
+// (Verifikation/Tests) und misst nach 3 s die Draw Calls pro Frame
+// (SPEC-marc-feedback2 B: Budget < 250).
 function DebugCamHook() {
   const { camera, scene, gl } = useThree();
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('debugcam') === '1') {
-      (window as unknown as Record<string, unknown>).__CAMERA = camera;
-      (window as unknown as Record<string, unknown>).__SCENE = scene;
-      (window as unknown as Record<string, unknown>).__RENDERER = gl;
-    }
+    if (new URLSearchParams(window.location.search).get('debugcam') !== '1') return;
+    (window as unknown as Record<string, unknown>).__CAMERA = camera;
+    (window as unknown as Record<string, unknown>).__SCENE = scene;
+    (window as unknown as Record<string, unknown>).__RENDERER = gl;
+    const id = setTimeout(() => {
+      console.info('[perf] draw calls/frame:', gl.info.render.calls, 'triangles:', gl.info.render.triangles);
+    }, 3000);
+    return () => clearTimeout(id);
   }, [camera, scene, gl]);
   return null;
 }
