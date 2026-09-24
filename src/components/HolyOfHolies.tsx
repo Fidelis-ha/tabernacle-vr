@@ -8,6 +8,7 @@ import {
 } from './TabernacleFloor';
 import { SideBeamWall, HOLY_WALL_SPLIT_Z } from './HolyPlace';
 import { GOLD, SILVER, VEIL_MAT } from '../utils/materials';
+import { goldTexture, goldRoughTexture } from '../utils/textures';
 import { Instanced, type InstanceTransform, type Vec3 } from '../utils/instancing';
 
 // Allerheiligstes nach Ex 25,10-22 / 26,31-34 / SPEC:
@@ -34,7 +35,22 @@ const veilCapGeo = new THREE.CylinderGeometry(0.065, 0.04, 0.12, 10);
 // tritt durch die Oeffnung) + Kronen-Torus am oberen Rand (elliptisch
 // skaliert auf den Laderand)
 const arkRingGeo = new THREE.TorusGeometry(0.055, 0.018, 6, 12, Math.PI * 1.5);
+const arkRingSocketGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.022, 8); // dunkle Fassung im Ring
 const arkCrownGeo = new THREE.TorusGeometry(1, 0.022, 6, 36);
+const arkCrownStepGeo = new THREE.TorusGeometry(1, 0.013, 6, 36); // 2 schmale Stufungsringe
+
+// Lade-Doppellage (SPEC A): untere Lage etwas dunkler patiniert
+// (Holz unter Gold ablesbar), dunkle Akzent-Fuge als Geometrie-Streifen
+const ARK_GOLD_LOWER = new THREE.MeshStandardMaterial({
+  color: 0xA8842C,
+  metalness: 1.0,
+  roughness: 0.55,
+  roughnessMap: goldRoughTexture,
+  envMapIntensity: 0.8,
+  bumpMap: goldTexture,
+  bumpScale: 0.06,
+});
+const ARK_SEAM = new THREE.MeshStandardMaterial({ color: 0x3A2A14, roughness: 0.9 });
 
 export function HolyOfHolies() {
   return (
@@ -173,14 +189,34 @@ function ArkOfCovenant({ position }: { position: Vec3 }) {
   const width = 1.5 * CUBIT;  // 0,675m
   const height = 1.5 * CUBIT; // 0,675m
   const footH = 0.06;
-  const bodyY = footH + height / 2;
   const kaporetY = footH + height + 0.045;
+  // Doppellage (SPEC A): untere Lage dunkler, sichtbare Fugen-Naht dazwischen
+  const lowerH = height * 0.55;
+  const upperH = height - lowerH;
+  const seamH = 0.012;
+  const upperY = footH + lowerH + seamH + upperH / 2;
+
+  // 4 goldene Ringe an den 4 UNTEREN Ecken (Ex 25,12)
+  const ringPositions: Vec3[] = [
+    [-length / 2 + 0.08, footH + 0.12, width / 2 + 0.035],
+    [length / 2 - 0.08, footH + 0.12, width / 2 + 0.035],
+    [-length / 2 + 0.08, footH + 0.12, -width / 2 - 0.035],
+    [length / 2 - 0.08, footH + 0.12, -width / 2 - 0.035],
+  ];
 
   return (
     <group position={[position[0], 0, position[2]]}>
-      {/* Ladekörper (grosse Silhouette) */}
-      <mesh position={[0, bodyY, 0]} material={GOLD} castShadow receiveShadow>
-        <boxGeometry args={[length, height, width]} />
+      {/* Ladekörper in ZWEI Bretter-Lagen (SPEC A): unten dunkler patiniert */}
+      <mesh position={[0, footH + lowerH / 2, 0]} material={ARK_GOLD_LOWER} castShadow receiveShadow>
+        <boxGeometry args={[length, lowerH, width]} />
+      </mesh>
+      <mesh position={[0, upperY, 0]} material={GOLD} castShadow receiveShadow>
+        <boxGeometry args={[length, upperH, width]} />
+      </mesh>
+      {/* Sichtbare horizontale Fugen-Naht: dünne dunkle Geometrie-Streifen
+          (nicht Textur) rund um den Korpus */}
+      <mesh position={[0, footH + lowerH + seamH / 2, 0]} material={ARK_SEAM}>
+        <boxGeometry args={[length + 0.004, seamH, width + 0.004]} />
       </mesh>
 
       {/* Goldene Krönung am oberen Rand */}
@@ -188,8 +224,8 @@ function ArkOfCovenant({ position }: { position: Vec3 }) {
         <boxGeometry args={[length + 0.05, 0.05, width + 0.05]} />
       </mesh>
 
-      {/* Goldkranz als "Krone" — Torus-Ring am oberen Rand, elliptisch auf
-          den Ladeumriss skaliert (B5) */}
+      {/* Goldkranz als gedrechselte WELLE (SPEC A): Haupt-Torus + 2 schmale
+          Ringe leicht versetzt (gestuft), elliptisch auf den Ladeumriss */}
       <mesh
         position={[0, footH + height + 0.008, 0]}
         rotation={[Math.PI / 2, 0, 0]}
@@ -197,31 +233,56 @@ function ArkOfCovenant({ position }: { position: Vec3 }) {
         geometry={arkCrownGeo}
         material={GOLD}
       />
+      <mesh
+        position={[0, footH + height + 0.026, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+        scale={[length / 2 + 0.018, width / 2 + 0.018, 1]}
+        geometry={arkCrownStepGeo}
+        material={GOLD}
+      />
+      <mesh
+        position={[0, footH + height - 0.012, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+        scale={[length / 2 + 0.042, width / 2 + 0.042, 1]}
+        geometry={arkCrownStepGeo}
+        material={GOLD}
+      />
 
-      {/* 4 goldene Ringe an den 4 UNTEREN Ecken (Ex 25,12) */}
-      {[
-        [-length / 2 + 0.08, footH + 0.12, width / 2 + 0.035],
-        [length / 2 - 0.08, footH + 0.12, width / 2 + 0.035],
-        [-length / 2 + 0.08, footH + 0.12, -width / 2 - 0.035],
-        [length / 2 - 0.08, footH + 0.12, -width / 2 - 0.035],
-      ].map((pos, i) => (
-        <mesh key={`ring-${i}`} position={pos as Vec3} rotation={[0, Math.PI / 2, 0]} geometry={arkRingGeo} material={GOLD} />
+      {/* 4 Ringe: echte rundgebogene Ösen (3/4-Torus), innen dunkle Fassung
+          als Durchbruchs-Andeutung — die Stangen liegen sichtbar IN den Ösen */}
+      {ringPositions.map((pos, i) => (
+        <group key={`ring-${i}`} position={pos} rotation={[0, Math.PI / 2, i * Math.PI]}>
+          <mesh geometry={arkRingGeo} material={GOLD} />
+          <mesh geometry={arkRingSocketGeo} material={ARK_SEAM} />
+        </group>
       ))}
 
-      {/* Tragstangen - Akazien mit Gold überzogen, bleiben eingesteckt (Ex 25,13-15) */}
+      {/* Tragstangen - Akazien mit Gold überzogen, bleiben eingesteckt
+          (Ex 25,13-15) und laufen durch die Ring-Ösen (gleiche Höhe y) */}
       {[width / 2 + 0.035, -width / 2 - 0.035].map((z, i) => (
         <mesh key={`stave-${i}`} position={[0, footH + 0.12, z]} rotation={[0, 0, Math.PI / 2]} material={GOLD}>
           <cylinderGeometry args={[0.03, 0.03, length + 0.7, 8]} />
         </mesh>
       ))}
 
-      {/* Kapporet (Gnadenstuhl) - massiv Gold (Ex 25,17), grosse Silhouette */}
+      {/* Kapporet (Gnadenstuhl) - massiv Gold (Ex 25,17), leicht ÜBERSTEHEND
+          (je 0,05 m, SPEC A) */}
       <mesh position={[0, kaporetY, 0]} material={GOLD} castShadow>
-        <boxGeometry args={[length + 0.06, 0.09, width + 0.06]} />
+        <boxGeometry args={[length + 0.1, 0.09, width + 0.1]} />
       </mesh>
 
-      {/* 2 grosse CHERUBIM - Flügel ausgebreitet nach oben, in der Mitte
-          berührend (Ex 25,18-20) */}
+      {/* Abschliessender Rand der Kapporet: flacher Torus, elliptisch
+          auf den überstehenden Umriss (SPEC A) */}
+      <mesh
+        position={[0, kaporetY + 0.045, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+        scale={[length / 2 + 0.05, width / 2 + 0.05, 1]}
+        geometry={arkCrownStepGeo}
+        material={GOLD}
+      />
+
+      {/* 2 grosse CHERUBIM - aus EINEM Stück mit der Kapporet (Ex 25,19),
+          Flügel berühren einander in der Mitte (Ex 25,20) */}
       <Cherub position={[-0.32, kaporetY + 0.045, 0]} facing={1} />
       <Cherub position={[0.32, kaporetY + 0.045, 0]} facing={-1} />
     </group>
@@ -229,39 +290,64 @@ function ArkOfCovenant({ position }: { position: Vec3 }) {
 }
 
 function Cherub({ position, facing }: { position: Vec3; facing: 1 | -1 }) {
-  // Getriebenes Gold, aus einem Stück mit der Kapporet (Ex 25,18)
-  // Flügel ausgebreitet nach oben (Ex 25,20): innere Flügel steil (65°) und
-  // treffen sich genau in der Mitte über der Kapporet, äussere zu den Wänden.
-  const wingInner = 0.5;  // Flügel zum anderen Cherub, Spitze erreicht x = 0
+  // Getriebenes Gold, aus einem Stück mit der Kapporet (Ex 25,18):
+  // Füsse als 2 kleine Goldkugeln am Deckel, Körper leicht nach vorn geneigt,
+  // Kopf vorgebeugt (Blicken nach unten). Flügel 2-segmentig; die inneren
+  // Segmente reichen bis x = 0 (Mitte über der Lade) und BERÜHREN sich dort
+  // tatsächlich (Ex 25,20): Cherub bei x = ∓0,32, Wurzel an der Körperkante,
+  // Spitze bei lokal ±0,32 -> Welt x = 0.
+  const wingInner = 0.56; // Wurzel lokal ±0,06 + horizontale Spannweite -> Spitze ~2cm UEBER x=0 hinaus:
+                          // echte UEBERLAPPUNG in der Mitte (Ex 25,20 "Spitzen einander entgegen"), nicht nur Kante an Kante
   const wingOuter = 0.55; // Flügel zur Wand
-  const innerAngle = THREE.MathUtils.degToRad(60);
+  const innerAngle = THREE.MathUtils.degToRad(60); // Steigwinkel innerer Flügel
   const outerAngle = THREE.MathUtils.degToRad(50);
-  // Innerer Flügel: Wurzel an der Körperkante (|x| = 0,25), Spitze exakt bei x = 0
-  const innerCenterX = -facing * (0.25 - (wingInner / 2) * Math.cos(innerAngle));
-  const innerCenterY = 0.34 + (wingInner / 2) * Math.sin(innerAngle);
-  // Äusserer Flügel: an der äusseren Körperkante, steil nach aussen ansteigend
-  const outerCenterX = -facing * (0.39 + (wingOuter / 2) * Math.cos(outerAngle));
+  // Innerer Flügel: Wurzel an der inneren Körperkante, steil zur Mitte.
+  // Die beiden inneren Flügel überlappen sich in der Mitte (Ex 25,20).
+  const innerCenterX = facing * (0.06 + (wingInner / 2) * Math.cos(innerAngle));
+  const innerCenterY = 0.32 + (wingInner / 2) * Math.sin(innerAngle);
+  // Äusserer Flügel: an der äusseren Körperkante, nach aussen ansteigend
+  const outerCenterX = -facing * (0.08 + (wingOuter / 2) * Math.cos(outerAngle));
   const outerCenterY = 0.38 + (wingOuter / 2) * Math.sin(outerAngle);
-  const innerRotation = Math.PI / 2 + facing * (innerAngle - Math.PI / 2);
+  const innerRotation = Math.PI / 2 - facing * (Math.PI / 2 - innerAngle);
   const outerRotation = Math.PI / 2 + facing * (Math.PI / 2 - outerAngle);
 
   return (
     <group position={position}>
-      {/* Körper */}
-      <mesh position={[0, 0.18, 0]} material={GOLD} castShadow>
+      {/* 2 kleine Standflächen (Füsse) am Deckel — aus einem Stück geschlagen */}
+      <mesh position={[-0.05, 0.012, 0]} material={GOLD}>
+        <sphereGeometry args={[0.022, 8, 8]} />
+      </mesh>
+      <mesh position={[0.05, 0.012, 0]} material={GOLD}>
+        <sphereGeometry args={[0.022, 8, 8]} />
+      </mesh>
+
+      {/* Körper, leicht nach vorn (zum Gegenüber) geneigt */}
+      <mesh position={[facing * 0.015, 0.18, 0]} rotation={[0, 0, -facing * 0.09]} material={GOLD} castShadow>
         <cylinderGeometry args={[0.07, 0.11, 0.36, 10]} />
       </mesh>
 
-      {/* Kopf, würdevoll ohne detaillierte Menschengesichter */}
-      <mesh position={[0, 0.42, 0]} material={GOLD}>
+      {/* Kopf, würdevoll ohne detaillierte Menschengesichter — leicht
+          vorgebeugt (Blicken nach unten) */}
+      <mesh position={[facing * 0.03, 0.405, 0]} rotation={[0, 0, -facing * 0.35]} material={GOLD}>
         <sphereGeometry args={[0.06, 10, 10]} />
       </mesh>
 
       {/* Innerer Flügel - steil, zur Mitte ausgebreitet: dünne Fläche,
-          2 Segmente mit Knick über innerer + äusserer Fittich (B5) */}
+          2 Segmente mit Knick über innerer + äusserer Fittich (B5).
+          Die Spitze überragt x=0 um ~2cm — zusammen mit dem Mittelstück
+          unten ist die BERÜHRUNG (Ex 25,20) aus jeder Distanz lesbar. */}
       <mesh position={[innerCenterX, innerCenterY, 0]} rotation={[0, 0, innerRotation]} material={GOLD}>
         <boxGeometry args={[wingInner, 0.014, 0.3]} />
       </mesh>
+
+      {/* Mittelstück: schmaler Gold-Streifen exakt über x=0, verbindet die
+          beiden Flügel-Spitzen (Spitzen berühren einander, Ex 25,20).
+          Nur beim Cherub mit facing=1 gerendert (sonst doppelt). */}
+      {facing === 1 && (
+        <mesh position={[0, innerCenterY, 0]} rotation={[0, 0, innerAngle]} material={GOLD}>
+          <boxGeometry args={[0.14, 0.013, 0.28]} />
+        </mesh>
+      )}
 
       {/* Äusserer Flügel - nach oben/aussen zur Wand, gegenläufiger Knick */}
       <mesh position={[outerCenterX, outerCenterY, 0]} rotation={[0, 0, outerRotation]} material={GOLD}>

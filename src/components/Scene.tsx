@@ -11,6 +11,9 @@ import { HolyPlace } from './HolyPlace';
 import { HolyOfHolies } from './HolyOfHolies';
 import { TabernacleLighting, SUN_DIRECTION } from './TabernacleLighting';
 import { CampIsrael } from './CampIsrael';
+import { Animals } from './Animals';
+import { HorizonFar } from './HorizonFar';
+import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 
 // Umgebung (SPEC aaa, Abschnitt c) — eine Szene, eine Stimmung:
 // - Himmel: drei Sky (Preetham) mit Wüstenwerten, Sonne tief passend zur Sonne der Lichtinszenierung
@@ -37,6 +40,9 @@ const CLOUDS: [number, number, number][] = [
 
 function Clouds() {
   const group = useRef<THREE.Group>(null);
+  // SPEC F: low-Tier 4 statt 8 Wolken, Opacity leicht reduziert
+  const q = QUALITY_SETTINGS[detectQuality()];
+  const visible = CLOUDS.slice(0, q.clouds);
 
   useFrame((state) => {
     const g = group.current;
@@ -52,7 +58,7 @@ function Clouds() {
 
   return (
     <group ref={group}>
-      {CLOUDS.map((p, i) => {
+      {visible.map((p, i) => {
         const sx = 55 + (i % 3) * 22;
         const mirror = i % 2 === 1; // x-Scale spiegeln -> keine identischen Zwillinge
         return (
@@ -60,7 +66,7 @@ function Clouds() {
             <spriteMaterial
               map={cloudTexture}
               transparent
-              opacity={0.55 + (i % 3) * 0.1}
+              opacity={(0.55 + (i % 3) * 0.1) * q.cloudOpacity}
               rotation={(i * 1.37) % Math.PI}
               depthWrite={false}
               fog={false}
@@ -76,6 +82,8 @@ function Clouds() {
 function Dunes() {
   // Eine Low-Poly-Plane (64x64 Segmente), Vertex-Noise ausserhalb des Vorhofs
   // (Radius ~80-150 m), Sandtextur, receiveShadow aus — 1 Draw Call.
+  // SPEC B: zusaetzlich feine Unebenheit (15-30 cm, seeded) abseits der
+  // grossen Duenen — laeuft bis zum Horizont durch.
   const geometry = useMemo(() => {
     const geo = new THREE.PlaneGeometry(480, 480, 64, 64);
     const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -90,7 +98,14 @@ function Dunes() {
           Math.sin(x * 0.021 + y * 0.033) * 3.1 +
           Math.sin((x + y) * 0.11) * 0.5) *
         falloff;
-      pos.setZ(i, h);
+      // feine Unebenheit 15-30 cm (seeded Sinus-Mix, kein Math.random —
+      // stabil ueber Reloads)
+      const fine =
+        (Math.sin(x * 0.31 + 1.7) * Math.cos(y * 0.27 + 0.4) * 0.5 +
+          Math.sin(x * 0.73 + y * 0.61 + 3.1) * 0.5) *
+        0.3 *
+        falloff;
+      pos.setZ(i, h + fine);
     }
     geo.computeVertexNormals();
     return geo;
@@ -114,6 +129,9 @@ function DebugCamHook() {
 }
 
 export function Scene() {
+  // SPEC F: Sparkles-Felder im low-Tier auf das Vorhof-Feld reduziert,
+  // Opazitaeten halbiert; Wolken 4 statt 8 (in Clouds)
+  const q = QUALITY_SETTINGS[detectQuality()];
   return (
     <group>
       <DebugCamHook />
@@ -127,8 +145,11 @@ export function Scene() {
         mieDirectionalG={0.75}
       />
 
-      {/* === WARMES STAUBIGES NEBELN an der Diorama-Horizontlinie === */}
-      <fog attach="fog" args={[0xCFC2A6, 60, 260]} />
+      {/* === WARMES STAUBIGES NEBELN an der Diorama-Horizontlinie ===
+          far auf 500 gestreckt, damit die Horizont-Silhouetten (SPEC E:
+          Huegel 300-420 m, Doerfer 250-350 m) als Dunst-Silhouetten lesbar
+          bleiben statt vollstaendig im Nebel zu verschwinden */}
+      <fog attach="fog" args={[0xCFC2A6, 60, 500]} />
 
       {/* === ENVIRONMENT-MAP als ERZEUGTE PMREM-Szene (kein Netz-Download):
             Gradient-Himmel + helle Sonnenkugel für Metallreflexe === */}
@@ -149,7 +170,8 @@ export function Scene() {
       {/* === WOLKEN (8 Billboards, langsam driftend) === */}
       <Clouds />
 
-      {/* === STAUB IM WIND: dezente Sparkles-Felder ===
+      {/* === STAUB IM WIND: dezente Sparkles-Felder (SPEC F: low nur Vorhof,
+          Opacity halbiert) —
           Vorhof-Feld endet vor der Stiftshuette (z <= 30), Zelt-Feld nur im
           Heiligen (z = 31,7 ... 40,3, sehr dezent), Allerheiligstes OHNE Staub */}
       <Sparkles
@@ -158,33 +180,43 @@ export function Scene() {
         position={[0, 2, 15]}
         size={2}
         speed={0.15}
-        opacity={0.1}
+        opacity={0.1 * q.sparklesOpacity}
         color="#E8DCC8"
         noise={0.5}
       />
-      <Sparkles
-        count={40}
-        scale={[4.2, 4, 8.6]}
-        position={[0, 2.2, 36]}
-        size={1}
-        speed={0.12}
-        opacity={0.1}
-        color="#E8DCC8"
-        noise={0.4}
-      />
-      <Sparkles
-        count={50}
-        scale={[2.5, 2.5, 2.5]}
-        position={[0, 1.6, ALTAR_Z]}
-        size={2}
-        speed={0.5}
-        opacity={0.55}
-        color="#FF8844"
-        noise={0.3}
-      />
+      {q.tentSparkles && (
+        <Sparkles
+          count={40}
+          scale={[4.2, 4, 8.6]}
+          position={[0, 2.2, 36]}
+          size={1}
+          speed={0.12}
+          opacity={0.1 * q.sparklesOpacity}
+          color="#E8DCC8"
+          noise={0.4}
+        />
+      )}
+      {q.altarSparkles && (
+        <Sparkles
+          count={50}
+          scale={[2.5, 2.5, 2.5]}
+          position={[0, 1.6, ALTAR_Z]}
+          size={2}
+          speed={0.5}
+          opacity={0.55 * q.sparklesOpacity}
+          color="#FF8844"
+          noise={0.3}
+        />
+      )}
 
       {/* === CAMP ISRAEL (deutbare Zutat nach 4. Mose 2, entfernbar) === */}
       <CampIsrael />
+
+      {/* === HERDE DES VOLKS (Ex 12,38, deutbare Zutat, SPEC D) === */}
+      <Animals />
+
+      {/* === HORIZONT: Huegel, Doerfer, Oase, Geier (SPEC E) === */}
+      <HorizonFar />
 
       {/* === LICHT-INSZENIERUNG === */}
       <TabernacleLighting />

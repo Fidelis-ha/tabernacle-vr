@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { create } from 'zustand';
+import { detectQuality, type QualityTier } from '../utils/quality';
 
 // === AUDIO (SPEC aaa: raeumliches Audio + Musikschicht, alles prozedural) ===
 // - Altarfeuer: Noise-Buffer + Bandpass (LFO) ueber PannerNode an (0, 1.4, 27)
@@ -247,6 +248,7 @@ interface GameStore {
   resetPosition: { x: number; z: number };
   moveInput: { x: number; z: number };
   xrActive: boolean;
+  quality: QualityTier; // SPEC F: einmalig beim Store-Init detektiert
   togglePause: () => void;
   setSettings: (settings: AudioSettings) => void;
   setMoveInput: (input: { x: number; z: number }) => void;
@@ -275,6 +277,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetPosition: { x: 0, z: -8 },
   moveInput: { x: 0, z: 0 },
   xrActive: false,
+  quality: detectQuality(),
   togglePause: () => {
     ensureAudioStarted();
     set({ isPaused: !get().isPaused });
@@ -311,6 +314,7 @@ export function GameUI() {
       <div style={{
         position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)',
         zIndex: 500,
+        display: 'flex', alignItems: 'center', gap: '10px',
       }}>
         <div style={{
           background: 'rgba(0, 0, 0, 0.7)',
@@ -324,6 +328,19 @@ export function GameUI() {
         }} onClick={togglePause}>
           ⏸ Pause (ESC)
         </div>
+        {useGameStore.getState().quality === 'low' && (
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.55)',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            color: '#C9C2A0',
+            fontFamily: 'Georgia, serif',
+            fontSize: '11px',
+            border: '1px solid rgba(212, 175, 55, 0.35)',
+          }}>
+            ⚡ Leicht-Modus
+          </div>
+        )}
       </div>
     );
   }

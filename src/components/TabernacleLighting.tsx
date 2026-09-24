@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ALTAR_Z, HOLY_OF_HOLIES_Z_CENTER, MENORA_X } from './TabernacleFloor';
 import { glowTexture, godRayTexture } from '../utils/textures';
+import { detectQuality, QUALITY_SETTINGS } from '../utils/quality';
 
 // Licht-Inszenierung (SPEC aaa, Abschnitt d):
 // Draussen: warmes Wüstensonnenlicht — EINZIGE Schattenquelle (Budget-Regel 3):
@@ -22,6 +23,8 @@ export function TabernacleLighting() {
   const sunRef = useRef<THREE.DirectionalLight>(null);
   const shekinahRef = useRef<THREE.Sprite>(null);
   const { scene } = useThree();
+  // SPEC F: Shadowmap 512 im 'low'-Tier statt 1024, Frustum bleibt gleich
+  const shadowMapSize = QUALITY_SETTINGS[detectQuality()].shadowMapSize;
 
   // Schekinah "atmet": Opacity pulsiert langsam (keine Allokation pro Frame)
   useFrame((state) => {
@@ -46,8 +49,8 @@ export function TabernacleLighting() {
     <group>
       <ambientLight intensity={0.35} color={0xFFF3E0} />
 
-      {/* Warmes Wüstensonnenlicht — einzige Schattenquelle, 1024 PCFSoft,
-          enges Frustum ±25m um Vorhof + Stiftshütte */}
+      {/* Warmes Wüstensonnenlicht — einzige Schattenquelle, PCFSoft
+          (512 low / 1024 high, SPEC F), enges Frustum ±25m um Vorhof + Stiftshütte */}
       <directionalLight
         ref={sunRef}
         position={[
@@ -58,7 +61,7 @@ export function TabernacleLighting() {
         intensity={2.2}
         color={0xFFE8C8}
         castShadow
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize={[shadowMapSize, shadowMapSize]}
         shadow-camera-far={110}
         shadow-camera-left={-25}
         shadow-camera-right={25}

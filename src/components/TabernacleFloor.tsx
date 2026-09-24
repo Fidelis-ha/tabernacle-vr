@@ -5,7 +5,10 @@
 //   Allerheiligstes: z = 40,5 ... 45 (10 Ellen, 4,5m)
 //   Breite 10 Ellen (4,5m), Höhe 10 Ellen (4,5m) - Ex 26,15-30
 
-import { EARTH } from '../utils/materials';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import * as THREE from 'three';
+import { EARTH, SAND } from '../utils/materials';
+import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
 
 export const CUBIT = 0.45;
 
@@ -44,20 +47,169 @@ export const HOLY_OF_HOLIES_Z_CENTER = 42.75;      // Mitte des Würfels
 export const ALTAR_Z = 27;    // Brandopferaltar auf der Mittellinie
 export const BASIN_Z = 29.5;  // Waschbecken zwischen Altar und Stiftshütte
 
+// Deterministischer Zufall (stabile Unebenheit/Steinanordnung über Reloads)
+function mulberry32(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Sperrzonen (SPEC B): kein Stein unter Altar / Becken / Stiftshütte /
+// Säulen-Reihen — Rechtecke x/z beim Platzieren abgefragt
+const STONE_EXCLUSION: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [
+  { minX: -2.9, maxX: 2.9, minZ: 31.2, maxZ: 45.4 },    // Stiftshütte-Fundament
+  { minX: -1.4, maxX: 1.4, minZ: 25.7, maxZ: 28.3 },    // Brandopferaltar
+  { minX: -1.1, maxX: 1.1, minZ: 28.4, maxZ: 30.6 },    // Waschbecken
+  { minX: -11.8, maxX: 11.8, minZ: -0.6, maxZ: 0.6 },   // Ostwand + Tor (Säulen)
+  { minX: -11.8, maxX: 11.8, minZ: 44.7, maxZ: 45.6 },  // Westwand (Säulen)
+  { minX: -11.9, maxX: -10.6, minZ: -0.5, maxZ: 45.5 }, // Süd-Reihe (Säulen)
+  { minX: 10.6, maxX: 11.9, minZ: -0.5, maxZ: 45.5 },   // Nord-Reihe (Säulen)
+];
+
+function isExcluded(x: number, z: number): boolean {
+  for (const e of STONE_EXCLUSION) {
+    if (x > e.minX && x < e.maxX && z > e.minZ && z < e.maxZ) return true;
+  }
+  return false;
+}
+
+// Stein-Geometrien (SPEC B: Dodecahedron + abgeflachte Sphäre etc.,
+// per Instanz flach gedrückt/rotiert)
+const rockGeos = [
+  new THREE.DodecahedronGeometry(0.14, 0),
+  new THREE.SphereGeometry(0.13, 6, 5),
+  new THREE.IcosahedronGeometry(0.11, 0),
+  new THREE.TetrahedronGeometry(0.12, 0),
+];
+
+// Sand-Farben (SPEC B: 0xC9B18C bis 0x8A7355)
+const ROCK_COLORS = [0xC9B18C, 0xB59E7A, 0xA08A66, 0x8A7355];
+
+// Steine im Sand: EIN Material (weiss) + instanceColor — 4 InstancedMeshes,
+// halb im Boden versenkt, kein castShadow (Budget)
+function GroundStones() {
+  const count = QUALITY_SETTINGS[detectQuality()].stones;
+  const mat = useMemo(
+    () => new THREE.MeshLambertMaterial({ color: 0xFFFFFF }),
+    []
+  );
+
+  const batches = useMemo(() => {
+    const rand = mulberry32(9137);
+    const perGeo: { matrix: THREE.Matrix4; color: THREE.Color }[][] = [[], [], [], []];
+    let placed = 0;
+    let guard = 0;
+    while (placed < count && guard < count * 60) {
+      guard++;
+      // Ring 12-22 m um die Vorhof-Mitte: Vorhof + unmittelbares Umfeld,
+      // ausserhalb der Zelt-Ringe (Camp ab 25 m), Ostkeil bleibt frei
+      const a = rand() * Math.PI * 2;
+      const r = 12 + rand() * 10;
+      const x = Math.sin(a) * r;
+      const z = 22.5 + Math.cos(a) * r;
+      if (Math.cos(a) < -0.72 && r < 16) continue; // Torbereich frei
+      if (isExcluded(x, z)) continue;
+      const g = Math.floor(rand() * 4);
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI)
+      );
+      const s = 0.5 + rand() * 1.1; // Grundgroesse, flach gedrueckt unten
+      m.compose(
+        new THREE.Vector3(x, 0.02 + s * 0.05, z),
+        q,
+        new THREE.Vector3(s, s * 0.55, s * (0.8 + rand() * 0.4))
+      );
+      const col = new THREE.Color(ROCK_COLORS[Math.floor(rand() * ROCK_COLORS.length)]);
+      col.offsetHSL(0, 0, (rand() - 0.5) * 0.06);
+      perGeo[g].push({ matrix: m, color: col });
+      placed++;
+    }
+    return perGeo;
+  }, [count]);
+
+  return (
+    <group>
+      {batches.map((batch, gi) => (
+        <RockBatch key={`rocks-${gi}`} geometry={rockGeos[gi]} material={mat} batch={batch} />
+      ))}
+    </group>
+  );
+}
+
+function RockBatch({
+  geometry,
+  material,
+  batch,
+}: {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  batch: { matrix: THREE.Matrix4; color: THREE.Color }[];
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    for (let i = 0; i < batch.length; i++) {
+      mesh.setMatrixAt(i, batch[i].matrix);
+      mesh.setColorAt(i, batch[i].color);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [batch]);
+
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[geometry, material, Math.max(batch.length, 1)]}
+      frustumCulled={false}
+    />
+  );
+}
+
 export function TabernacleFloor() {
+  // Vorhof-Boden: 32x32 Segmente mit seeded Vertex-Displacement (SPEC B:
+  // leichte Dellen und Huegel, Amplitude 3-6 cm)
+  const courtyardGeo = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(COURTYARD_WIDTH, COURTYARD_LENGTH, 32, 32);
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const rand = mulberry32(511);
+    const p1 = rand() * 10, p2 = rand() * 10, p3 = rand() * 10;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      // 2-3 ueberlagerte Sinus-Wellen (seeded) + feines Rauschen, 3-6 cm
+      const h =
+        Math.sin(x * 0.5 + p1) * Math.cos(y * 0.33 + p2) * 0.022 +
+        Math.sin((x + y) * 0.21 + p3) * 0.016 +
+        (rand() - 0.5) * 0.01;
+      pos.setZ(i, h);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
   return (
     <group>
       {/* Vorhof-Boden - feste Erde, z = 0 ... 45 (auch in der Stiftshütte,
           die Bibel kennt keinen Innenboden-Belag). Der Wüstensand um den
           Vorhof kommt als Dünen-Plane in Scene.tsx (1 Draw Call). */}
       <mesh
+        geometry={courtyardGeo}
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0, COURTYARD_Z_CENTER]}
         material={EARTH}
         receiveShadow
-      >
-        <planeGeometry args={[COURTYARD_WIDTH, COURTYARD_LENGTH]} />
-      </mesh>
+      />
+
+      {/* Steine im Sand (SPEC B: 40-70 high / 20 low, halb versenkt,
+          Sperrzonen respektiert, kein castShadow) */}
+      <GroundStones />
     </group>
   );
 }

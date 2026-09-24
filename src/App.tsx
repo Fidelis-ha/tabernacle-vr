@@ -5,6 +5,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { Scene } from './components/Scene';
 import { GameStateManager, GameUI, useGameStore, ensureAudioStarted } from './components/GameUI';
+import { QUALITY_SETTINGS } from './utils/quality';
 
 // Create XR store with teleport enabled
 const store = createXRStore({
@@ -14,9 +15,11 @@ const store = createXRStore({
 
 // Postprocessing (SPEC aaa, a): Bloom + Vignette NUR ausserhalb XR.
 // In XR gilt stattdessen: ACES-Tonemapping + Foveation (siehe onCreated).
+// SPEC F: im 'low'-Tier komplett AUS (auch ausserhalb XR).
 function PostFX() {
   const session = useXR((s) => s.session);
-  if (session) return null;
+  const quality = useGameStore((s) => s.quality);
+  if (session || !QUALITY_SETTINGS[quality].postFX) return null;
   return (
     <EffectComposer multisampling={0}>
       <Bloom luminanceThreshold={0.85} luminanceSmoothing={0.25} intensity={0.4} mipmapBlur />
@@ -172,6 +175,8 @@ export default function App() {
   const [loadProgress, setLoadProgress] = useState(0);
   const isTouchDevice = useIsTouchDevice();
   const xrActive = useGameStore((s) => s.xrActive);
+  const quality = useGameStore((s) => s.quality);
+  const q = QUALITY_SETTINGS[quality];
 
   useEffect(() => {
     const stages = [
@@ -212,14 +217,15 @@ export default function App() {
       <VRButton />
 
       {/* Three.js Canvas with XR — Quest-3-Settings (Budget-Regeln 6-7):
-          dpr [1,2], high-performance, ACESFilmic exposure 1.1, Foveation 1 */}
+          dpr [1,2], high-performance, ACESFilmic exposure 1.1, Foveation 1.
+          SPEC F: 'low'-Tier faehrt dpr [0.75,1.25] + antialias aus */}
       <Canvas
         style={{ width: '100%', height: '100%', touchAction: 'none' }}
         camera={{ fov: 60, near: 0.1, far: 500, position: [0, 1.6, -8], rotation: [0, Math.PI, 0] }}
         shadows={{ enabled: true, type: THREE.PCFSoftShadowMap }}
-        dpr={[1, 2]}
+        dpr={q.dpr}
         gl={{
-          antialias: true,
+          antialias: q.antialias,
           alpha: false,
           powerPreference: 'high-performance'
         }}
