@@ -39,8 +39,9 @@ const pegGeo = new THREE.CylinderGeometry(0.022, 0.014, 0.25, 6);
 const ropeGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5);
 
 // Identische Inline-Geometrien als Modul-Konstanten (Budget-Regel 8)
-const altarHornGeo = new THREE.ConeGeometry(0.09, 0.3, 8);        // Altar-Hoerner
-const altarRingGeo = new THREE.TorusGeometry(0.07, 0.02, 6, 12);  // Altar-Ringe
+const altarHornGeo = new THREE.ConeGeometry(0.075, 0.28, 8);       // Altar-Hoerner (leicht konisch, B4)
+const altarHornTipGeo = new THREE.SphereGeometry(0.032, 8, 8);     // abgerundete Hornspitze (B4)
+const altarRingGeo = new THREE.TorusGeometry(0.07, 0.02, 6, 12);   // Altar-Ringe
 const grateBarGeo = new THREE.BoxGeometry(5 * CUBIT - 0.1, 0.03, 0.03); // Rostbalken
 const fireConeGeoL = new THREE.ConeGeometry(0.45, 0.85, 8); // Altarfeuer-Kegel (3 Groessen)
 const fireConeGeoM = new THREE.ConeGeometry(0.3, 0.55, 8);
@@ -60,20 +61,22 @@ const gateGeo = (() => {
 })();
 
 // Vorhangwaende: 20 Segmente, minimaler Sinus-Sag (~2,5cm pro Feld) —
-// der Stoff haengt zwischen den Saeulen leicht durch
-function makeSaggingWall(width: number): THREE.PlaneGeometry {
+// der Stoff haengt zwischen den Saeulen leicht durch. bow: Vorzeichen der
+// lokalen z-Auslenkung, je nach Wandrotation nach AUSSEN wölbend (A1).
+function makeSaggingWall(width: number, bow: 1 | -1 = -1): THREE.PlaneGeometry {
   const geo = new THREE.PlaneGeometry(width, H, 20, 1);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
     const u = pos.getX(i) / width + 0.5; // 0..1
-    pos.setZ(i, -Math.abs(Math.sin(u * Math.PI * 20)) * 0.025);
+    pos.setZ(i, bow * Math.abs(Math.sin(u * Math.PI * 20)) * 0.025);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
   return geo;
 }
-const wallSideGeo = makeSaggingWall(COURTYARD_LENGTH - 0.1); // Sued + Nord (identisch)
-const wallWestGeo = makeSaggingWall(COURTYARD_WIDTH - 0.1);
+const wallSideGeo = makeSaggingWall(COURTYARD_LENGTH - 0.1);        // Sued
+const wallSideGeoN = makeSaggingWall(COURTYARD_LENGTH - 0.1, 1);    // Nord (gespiegelt)
+const wallWestGeo = makeSaggingWall(COURTYARD_WIDTH - 0.1, 1);
 const wallEastGeo = makeSaggingWall(HALF_W - gateHalf - 0.1);
 
 export function TabernacleCourtyard() {
@@ -163,47 +166,53 @@ export function TabernacleCourtyard() {
 
       {/* === SEITENVORHÄNGE - weisser gezwirnter Byssus (Ex 27,9) === */}
 
-      {/* Südwand (x = -11,25) — grosse Silhouette, wirft Schatten */}
+      {/* Südwand (x = -11,25) — exakt AUF der Säulenlinie (A1): die Plane
+          läuft entlang z (Rotation +90°), Oberkante auf Säulenhöhe, keine
+          Abstandseile zur Wand. Grosse Silhouette, wirft Schatten. */}
       <mesh
         position={[-HALF_W, H / 2 + 0.02, COURTYARD_LENGTH / 2]}
+        rotation={[0, Math.PI / 2, 0]}
         geometry={wallSideGeo}
         material={BYSSUS}
         castShadow
         receiveShadow
       />
 
-      {/* Nordwand (x = +11,25) */}
+      {/* Nordwand (x = +11,25) — ebenfalls exakt auf der Säulenlinie */}
       <mesh
         position={[HALF_W, H / 2 + 0.02, COURTYARD_LENGTH / 2]}
-        rotation={[0, Math.PI, 0]}
-        geometry={wallSideGeo}
+        rotation={[0, Math.PI / 2, 0]}
+        geometry={wallSideGeoN}
         material={BYSSUS}
         castShadow
         receiveShadow
       />
 
-      {/* Westwand (z = 45, Rückseite) */}
+      {/* Westwand (z = 45) — exakt auf der West-Säulenlinie, Plane läuft
+          entlang x (KEINE Rotation — vorher stand sie quer durchs Zelt, A1/A2).
+          +1cm nach aussen: keine Z-Kollision mit der Goldbalken-Aussenfläche. */}
       <mesh
-        position={[0, H / 2 + 0.02, COURTYARD_LENGTH]}
-        rotation={[0, -Math.PI / 2, 0]}
+        position={[0, H / 2 + 0.02, COURTYARD_LENGTH + 0.01]}
         geometry={wallWestGeo}
         material={BYSSUS}
+        castShadow
         receiveShadow
       />
 
-      {/* Ostwand (z = 0) - zwei Segmente neben dem Tor */}
+      {/* Ostwand (z = 0) - zwei Segmente neben dem Tor, exakt auf der
+          Ost-Säulenlinie (KEINE Rotation — sie lief vorher quer durchs Tor) */}
       <mesh
         position={[-(HALF_W + gateHalf) / 2, H / 2 + 0.02, 0]}
-        rotation={[0, Math.PI / 2, 0]}
         geometry={wallEastGeo}
         material={BYSSUS}
+        castShadow
         receiveShadow
       />
       <mesh
         position={[(HALF_W + gateHalf) / 2, H / 2 + 0.02, 0]}
-        rotation={[0, Math.PI / 2, 0]}
         geometry={wallEastGeo}
         material={BYSSUS}
+        castShadow
         receiveShadow
       />
 
@@ -281,14 +290,18 @@ function BronzeAltar({ position }: { position: Vec3 }) {
         <mesh key={`grate-${i}`} position={[0, height * 0.5 + 0.04, z]} geometry={grateBarGeo} material={BRONZE} />
       ))}
 
-      {/* Vier HÖRNER an den vier Ecken (Ex 27,2) */}
+      {/* Vier HÖRNER an den vier Ecken (Ex 27,2) - leicht konisch mit
+          abgerundeter Spitze via kleiner Kugel (B4) */}
       {[
         [-size / 2, height, -size / 2],
         [size / 2, height, -size / 2],
         [-size / 2, height, size / 2],
         [size / 2, height, size / 2],
       ].map((pos, i) => (
-        <mesh key={`horn-${i}`} position={pos as Vec3} geometry={altarHornGeo} material={BRONZE} />
+        <group key={`horn-${i}`} position={pos as Vec3}>
+          <mesh position={[0, 0.14, 0]} geometry={altarHornGeo} material={BRONZE} />
+          <mesh position={[0, 0.28, 0]} geometry={altarHornTipGeo} material={BRONZE} />
+        </group>
       ))}
 
       {/* Feuer auf dem Gitter - 3 überlappende Kegel, EIN geteiltes
@@ -321,23 +334,31 @@ function BronzeAltar({ position }: { position: Vec3 }) {
 
 function BronzeBasin({ position }: { position: Vec3 }) {
   // 2. Mose 30,18 - bronzes Becken auf bronzenem Fuss
+  // B4: Kelchform-Fuss (2 Konen), elliptischer Beckenrand (skalierter Torus),
+  // statische Wasserfläche, Bronze-Patina via BRONZE-Material
   return (
     <group position={position}>
-      <mesh position={[0, 0.5, 0]} material={BRONZE} castShadow>
-        <cylinderGeometry args={[0.3, 0.42, 1.0, 10]} />
+      {/* Kelchfuss: unterer Flare-Kegel + Stem-Kegel */}
+      <mesh position={[0, 0.175, 0]} material={BRONZE} castShadow>
+        <cylinderGeometry args={[0.14, 0.4, 0.35, 12]} />
+      </mesh>
+      <mesh position={[0, 0.675, 0]} material={BRONZE} castShadow>
+        <cylinderGeometry args={[0.3, 0.12, 0.65, 12]} />
       </mesh>
 
+      {/* Beckenschale */}
       <mesh position={[0, 1.25, 0]} material={BRONZE} castShadow>
         <cylinderGeometry args={[0.8, 0.5, 0.5, 16]} />
       </mesh>
 
-      {/* Wasserfläche */}
+      {/* Wasserfläche (statisch, kein Wellen-Shader) */}
       <mesh position={[0, 1.42, 0]} material={WATER}>
         <cylinderGeometry args={[0.74, 0.6, 0.12, 16]} />
       </mesh>
 
-      {/* Beckenrand — Torus flach gelegt (XY-Ebene -> XZ), y = Oberkante Becken */}
-      <mesh position={[0, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]} material={BRONZE}>
+      {/* Beckenrand — Torus flach gelegt (XY-Ebene -> XZ), elliptisch
+          skaliert (B4), y = Oberkante Becken */}
+      <mesh position={[0, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 1]} material={BRONZE}>
         <torusGeometry args={[0.79, 0.035, 8, 24]} />
       </mesh>
     </group>

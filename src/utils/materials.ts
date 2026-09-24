@@ -9,6 +9,10 @@ import {
   veilTexture,
   underRoofTexture,
   screenTexture,
+  goldTexture,
+  goldRoughTexture,
+  breadTexture,
+  bronzeTexture,
 } from './textures';
 
 // Material-Singletons (Budget-Regel 5): JEDES Preset genau EINE geteilte
@@ -17,28 +21,39 @@ import {
 // AUSNAHME: wirklich individuelle emissive Effekte (Glut, Flacker-Lichter)
 // brauchen eigene Instanzen — identische Flammen teilen sich FLAME.
 
-// Gemeinsames Flammen-Material (Menora-Laemmchen + Altarfeuer-Kegel):
-// EINE geteilte emissive Instanz statt 7+ identischer Duplikate
+// Gemeinsames Flammen-Material (Menora-Flammen-Ebenen + Altarfeuer-Kegel):
+// EINE geteilte emissive Instanz statt identischer Duplikate; B1: Flammen
+// leicht transparent, DoubleSide (gekreuzte Ebenen der Menora)
 export const FLAME = new THREE.MeshStandardMaterial({
   color: 0xFF9933,
   emissive: 0xFFAA00,
   emissiveIntensity: 2.2,
+  transparent: true,
+  opacity: 0.92,
+  side: THREE.DoubleSide,
+  depthWrite: false,
 });
 
-// Gold - hochreflektierend, PBR-plain mit envMap (KEINE Textur)
+// Gold - hochreflektierend, PBR-plain mit envMap; B2: feine Hammerung als
+// bumpMap (intensity niedrig — gehämmert statt plastikglatt)
 export const GOLD = new THREE.MeshStandardMaterial({
   color: 0xD4AF37,
   metalness: 1.0,
-  roughness: 0.18,
-  envMapIntensity: 1.0,
+  roughness: 0.45, // Basis: moderat — die roughnessMap moduliert pro Pixel (Schlaege rau, Grund glatt)
+  roughnessMap: goldRoughTexture, // Hammerung in JEDEM Licht sichtbar (metalness 1.0 verschluckt bumpMap)
+  envMapIntensity: 0.9,
+  bumpMap: goldTexture,
+  bumpScale: 0.05, // deutlich starker, damit die Hammer-Schlage im Licht lesbar sind
 });
 
-// Bronze/Kupfer mit Patina
+// Bronze/Kupfer mit Patina (B2: Patina-Textur, Reibglanz in der Mitte);
+// Grundfarbe neutralisiert, damit die Patina-Textur die Farbe traegt (sonst braun-schwarz statt gruenlich)
 export const BRONZE = new THREE.MeshStandardMaterial({
-  color: 0xB87333,
-  metalness: 0.9,
-  roughness: 0.3,
+  color: 0xD8A878,
+  metalness: 0.85,
+  roughness: 0.32,
   envMapIntensity: 1.0,
+  map: bronzeTexture,
 });
 
 // Silber - hell reflektierend
@@ -126,12 +141,15 @@ export const GATE_MAT = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide,
 });
 
-// Parochet: 4 Farben + Cherubim-Wirkerei als Textur (Ex 26,31)
+// Parochet: 4 Farben + Cherubim-Wirkerei als Textur (Ex 26,31); B2:
+// Leinen-Basis als feine bumpMap
 export const VEIL_MAT = new THREE.MeshStandardMaterial({
   color: 0xFFFFFF,
   roughness: 0.65,
   metalness: 0.05,
   map: veilTexture,
+  bumpMap: linenTexture,
+  bumpScale: 0.01,
   side: THREE.DoubleSide,
 });
 
@@ -149,10 +167,13 @@ export const ROPE = new THREE.MeshStandardMaterial({
   roughness: 0.9,
 });
 
-// Schaubrote
+// Schaubrote (B2: Krusten-Textur mit Koernung + dunklem Rand)
 export const BREAD = new THREE.MeshStandardMaterial({
-  color: 0xD4A574,
+  color: 0xFFFFFF,
   roughness: 0.85,
+  map: breadTexture,
+  bumpMap: breadTexture,
+  bumpScale: 0.008,
 });
 
 // Wasser im Becken

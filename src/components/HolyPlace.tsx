@@ -50,20 +50,27 @@ const sideBoardGeo = new THREE.BoxGeometry(0.12, TENT_HEIGHT - 0.2, 1); // Tiefe
 const socketGeo = new THREE.BoxGeometry(0.28, 0.2, 0.36);
 const barGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 8);            // Länge via scale
 const ringGeo = new THREE.TorusGeometry(0.052, 0.012, 6, 12);
-const loavesGeo = new THREE.BoxGeometry(0.17, 0.038, 0.13);
+const loavesGeo = new THREE.CylinderGeometry(0.085, 0.08, 0.038, 14);      // flach-runde Brote (B3)
 const roofPegGeo = new THREE.CylinderGeometry(0.022, 0.014, 0.25, 6);
 const roofRopeGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5);
 
 // Identische Inline-Geometrien als Modul-Konstanten (Budget-Regel 8)
-const tableLegGeo = new THREE.BoxGeometry(0.06, 1.5 * CUBIT - 0.1, 0.06);  // Schaubrottisch-Beine
+const tableLegGeo = new THREE.CylinderGeometry(0.026, 0.032, 1.5 * CUBIT - 0.1, 8); // Bein (profiert, B3)
+const tableLegFootGeo = new THREE.TorusGeometry(0.036, 0.009, 6, 12);      // Ring-Fuss (B3)
 const crownTorusGeo = new THREE.TorusGeometry(CUBIT / 2 - 0.01, 0.012, 6, 20); // Doppelskranz
 const cornerRingGeo = new THREE.TorusGeometry(0.035, 0.01, 6, 12);          // Tisch-Eckenringe
 const incenseHornGeo = new THREE.ConeGeometry(0.045, 0.16, 8);              // Raeuchar-Hoerner
 const incenseRingGeo = new THREE.TorusGeometry(0.045, 0.012, 6, 12);        // Raeuchar-Ringe
-const flameConeGeo = new THREE.ConeGeometry(0.018, 0.06, 6);                // Menora-Flaemmchen
 const lampGeo = new THREE.CylinderGeometry(0.04, 0.028, 0.06, 8);           // 7 Oellämpchen-Schalen
 const knopGeo = new THREE.SphereGeometry(0.028, 8, 8);                      // Mandelblüten-Knauf (Schaft)
 const knopGeoSmall = new THREE.SphereGeometry(0.02, 8, 8);                  // Mandelblüten-Knauf (Arme)
+// B1: filigrane Menora-Zutaten (geteilte Modul-Geometrien)
+const footStep1Geo = new THREE.CylinderGeometry(0.16, 0.18, 0.045, 14);     // gestufter Fuss
+const footStep2Geo = new THREE.CylinderGeometry(0.115, 0.14, 0.04, 14);
+const footStep3Geo = new THREE.CylinderGeometry(0.075, 0.1, 0.045, 14);
+const calotteGeo = new THREE.ConeGeometry(0.015, 0.024, 6);                 // Blütenkalotte
+const calyxGeo = new THREE.ConeGeometry(0.026, 0.05, 8);                    // Kelchblüte (invers)
+const flamePlaneGeo = new THREE.PlaneGeometry(0.032, 0.064);                // Flamme (2 Ebenen)
 
 export function HolyPlace() {
   return (
@@ -166,11 +173,16 @@ function RoofLayers() {
   // 1 Ellen Überhang vorn (Osten, z = 31,5), hinten hängt die halbe Decke (Ex 26,9.12-13)
   // Hängetau + Bronzepflöcke an der Aussenkante der Ziegenhaardecke (Ex 27,19), je 5 pro Seite
   const frontOverhang = CUBIT;
+  // A3 (Ex 26,1-14): Schicht a (Byssus/Cherubim) ist die INNENDECKE — von
+  // aussen unsichtbar. Ihre Box liegt daher VOLL innerhalb der Goldbalken
+  // (w < TENT_WIDTH), der westliche "halbe Decke"-Hang entfaellt (innen gibt
+  // es nur Goldbretter + Cherubimdecke), und die Innen-Deckenplane bleibt
+  // hinter den Balken (w < Balken-Aussenkante 4,62).
   const layers = [
-    { w: 4.9, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM },
-    { w: 5.35, t: 0.04, back: 45.6, y: 4.56, mat: GOAT_HAIR },
-    { w: 5.8, t: 0.04, back: 45.9, y: 4.61, mat: RAM_SKIN },
-    { w: 6.25, t: 0.05, back: 46.2, y: 4.66, mat: TACHASH },
+    { w: 4.4, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
+    { w: 5.35, t: 0.04, back: 45.6, y: 4.56, mat: GOAT_HAIR, inner: false },
+    { w: 5.8, t: 0.04, back: 45.9, y: 4.61, mat: RAM_SKIN, inner: false },
+    { w: 6.25, t: 0.05, back: 46.2, y: 4.66, mat: TACHASH, inner: false },
   ];
   const goatHair = layers[1];
   const ropeZs = Array.from({ length: 5 }, (_, i) => 32 + i * 3.25);
@@ -180,6 +192,7 @@ function RoofLayers() {
   const underRoof = layers[0];
   const underFront = TENT_Z_START - frontOverhang;
   const underLen = underRoof.back - underFront;
+  const underW = 4.46; // bleibt hinter den Balken-Aussenkanten (±2,31)
 
   const roofRopes: InstanceTransform[] = [];
   const roofPegs: InstanceTransform[] = [];
@@ -207,10 +220,13 @@ function RoofLayers() {
             <mesh position={[0, l.y, zCenter]} material={l.mat} castShadow={i >= 2}>
               <boxGeometry args={[l.w, l.t, len]} />
             </mesh>
-            {/* Hinten hängt der Vorhang herunter (halbe Decke) */}
-            <mesh position={[0, 3.35, l.back - 0.02]} material={l.mat}>
-              <planeGeometry args={[l.w, 2.3]} />
-            </mesh>
+            {/* Hinten hängt der Vorhang herunter (halbe Decke, Ex 26,9.12-13)
+                — NUR die Aussen-Schichten b/c/d; Schicht a ist Innendecke (A3) */}
+            {!l.inner && (
+              <mesh position={[0, 3.35, l.back - 0.02]} material={l.mat}>
+                <planeGeometry args={[l.w, 2.3]} />
+              </mesh>
+            )}
 
             {/* Unterseite der Byssus-Schicht (Innenansicht): 1 texturierte Plane */}
             {i === 0 && (
@@ -219,7 +235,7 @@ function RoofLayers() {
                 rotation={[Math.PI / 2, 0, 0]}
                 material={l.mat}
               >
-                <planeGeometry args={[l.w, underLen]} />
+                <planeGeometry args={[underW, underLen]} />
               </mesh>
             )}
           </group>
@@ -291,7 +307,7 @@ function Menora({ position }: { position: Vec3 }) {
   ];
 
   // Flammen-Animation: y-Scale +-15%, Phasen versetzt (keine Allokation pro Frame)
-  const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const flameRefs = useRef<(THREE.Group | null)[]>([]);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const flames = flameRefs.current;
@@ -305,19 +321,24 @@ function Menora({ position }: { position: Vec3 }) {
 
   return (
     <group position={position}>
-      {/* Fuss */}
-      <mesh position={[0, baseY / 2, 0]} material={GOLD} castShadow>
-        <cylinderGeometry args={[0.1, 0.16, baseY, 12]} />
-      </mesh>
+      {/* Fuss: gestufter Sockel aus 3 Zylinder-Stufen (B1) */}
+      <mesh position={[0, 0.0225, 0]} geometry={footStep1Geo} material={GOLD} castShadow />
+      <mesh position={[0, 0.065, 0]} geometry={footStep2Geo} material={GOLD} />
+      <mesh position={[0, 0.1075, 0]} geometry={footStep3Geo} material={GOLD} />
 
-      {/* Mittelschaft */}
+      {/* Mittelschaft - konisch leicht zulaufend */}
       <mesh position={[0, baseY + (stemTop - baseY) / 2, 0]} material={GOLD} castShadow>
         <cylinderGeometry args={[0.022, 0.03, stemTop - baseY, 8]} />
       </mesh>
 
-      {/* Mandelblüten-Knäufe am Schaft */}
+      {/* 3 Mandelblüten-Knäufe, jeder mit Blütenkalotte (kleiner Kegel)
+          darueber UND darunter (B1) */}
       {[0.3, 0.55, 0.8].map((y, i) => (
-        <mesh key={`knop-${i}`} position={[0, y, 0]} geometry={knopGeo} material={GOLD} />
+        <group key={`knop-${i}`} position={[0, y, 0]}>
+          <mesh geometry={knopGeo} material={GOLD} />
+          <mesh position={[0, 0.032, 0]} geometry={calotteGeo} material={GOLD} />
+          <mesh position={[0, -0.032, 0]} rotation={[Math.PI, 0, 0]} geometry={calotteGeo} material={GOLD} />
+        </group>
       ))}
 
       {/* 3 Paar gebogener Arme (CatmullRom-Schwünge) */}
@@ -342,16 +363,17 @@ function Menora({ position }: { position: Vec3 }) {
         })
       )}
 
-      {/* 7 Lämpchen (Schalen) mit Flammen — EIN geteiltes FLAME-Material */}
+      {/* 7 Lämpchen: Schale + Kelchblüte (inverser Kegel) darunter, mit
+          Flammen als 2 gekreuzte, leicht transparente Ebenen (B1) —
+          EIN geteiltes FLAME-Material */}
       {[0, ...pairs.map((p) => p.lampX * -1), ...pairs.map((p) => p.lampX)].map((x, i) => (
         <group key={`lamp-${i}`} position={[x, lampY, 0]}>
           <mesh geometry={lampGeo} material={GOLD} />
-          <mesh
-            ref={(m) => { flameRefs.current[i] = m; }}
-            position={[0, 0.06, 0]}
-            geometry={flameConeGeo}
-            material={FLAME}
-          />
+          <mesh position={[0, -0.05, 0]} rotation={[Math.PI, 0, 0]} geometry={calyxGeo} material={GOLD} />
+          <group ref={(g) => { flameRefs.current[i] = g; }} position={[0, 0.055, 0]}>
+            <mesh geometry={flamePlaneGeo} material={FLAME} />
+            <mesh geometry={flamePlaneGeo} material={FLAME} rotation={[0, Math.PI / 2, 0]} />
+          </group>
         </group>
       ))}
 
@@ -402,18 +424,22 @@ function ShowbreadTable({ position }: { position: Vec3 }) {
         <boxGeometry args={[w, 0.05, d]} />
       </mesh>
 
-      {/* Goldener Doppelkranz (zwei Ringe, geteilte Geometrie) */}
+      {/* Goldener Doppelkranz als gedrechselte Welle: zwei überlagerte,
+          gestuft skalierte Ringe (B3) */}
       <mesh position={[0, topY + 0.015, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={crownTorusGeo} material={GOLD} />
-      <mesh position={[0, topY + 0.045, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={crownTorusGeo} material={GOLD} />
+      <mesh position={[0, topY + 0.042, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={crownTorusGeo} scale={[0.94, 0.94, 1]} material={GOLD} />
 
-      {/* 4 Beine (geteilte Geometrie) */}
+      {/* 4 Beine (profilierter Zylinder) mit Ring-Fuss (geteilte Geometrien, B3) */}
       {[
         [-w / 2 + 0.06, d / 2 - 0.06],
         [w / 2 - 0.06, d / 2 - 0.06],
         [-w / 2 + 0.06, -d / 2 + 0.06],
         [w / 2 - 0.06, -d / 2 + 0.06],
       ].map((pos, i) => (
-        <mesh key={`leg-${i}`} position={[pos[0], h / 2 - 0.05, pos[1]]} geometry={tableLegGeo} material={GOLD} />
+        <group key={`leg-${i}`}>
+          <mesh position={[pos[0], h / 2 - 0.05, pos[1]]} geometry={tableLegGeo} material={GOLD} />
+          <mesh position={[pos[0], 0.012, pos[1]]} rotation={[Math.PI / 2, 0, 0]} geometry={tableLegFootGeo} material={GOLD} />
+        </group>
       ))}
 
       {/* 4 goldene Ringe an den Ecken + Tragstangen (Ex 25,26-28) */}

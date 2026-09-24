@@ -30,8 +30,11 @@ const veilPedestalGeo = new THREE.BoxGeometry(0.28, 0.2, 0.28);
 const veilShaftGeo = new THREE.CylinderGeometry(0.045, 0.055, TENT_HEIGHT, 10);
 const veilCapGeo = new THREE.CylinderGeometry(0.065, 0.04, 0.12, 10);
 
-// Lade-Ringe: identische Inline-Geometrie als Modul-Konstante (Budget-Regel 8)
-const arkRingGeo = new THREE.TorusGeometry(0.055, 0.018, 6, 12);
+// Lade-Ringe (B5: sichtbarer Ring-Ausschnitt — 3/4-Torus, die Tragstange
+// tritt durch die Oeffnung) + Kronen-Torus am oberen Rand (elliptisch
+// skaliert auf den Laderand)
+const arkRingGeo = new THREE.TorusGeometry(0.055, 0.018, 6, 12, Math.PI * 1.5);
+const arkCrownGeo = new THREE.TorusGeometry(1, 0.022, 6, 36);
 
 export function HolyOfHolies() {
   return (
@@ -185,6 +188,16 @@ function ArkOfCovenant({ position }: { position: Vec3 }) {
         <boxGeometry args={[length + 0.05, 0.05, width + 0.05]} />
       </mesh>
 
+      {/* Goldkranz als "Krone" — Torus-Ring am oberen Rand, elliptisch auf
+          den Ladeumriss skaliert (B5) */}
+      <mesh
+        position={[0, footH + height + 0.008, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+        scale={[length / 2 + 0.03, width / 2 + 0.03, 1]}
+        geometry={arkCrownGeo}
+        material={GOLD}
+      />
+
       {/* 4 goldene Ringe an den 4 UNTEREN Ecken (Ex 25,12) */}
       {[
         [-length / 2 + 0.08, footH + 0.12, width / 2 + 0.035],
@@ -244,22 +257,24 @@ function Cherub({ position, facing }: { position: Vec3; facing: 1 | -1 }) {
         <sphereGeometry args={[0.06, 10, 10]} />
       </mesh>
 
-      {/* Innerer Flügel - steil, zur Mitte ausgebreitet */}
+      {/* Innerer Flügel - steil, zur Mitte ausgebreitet: dünne Fläche,
+          2 Segmente mit Knick über innerer + äusserer Fittich (B5) */}
       <mesh position={[innerCenterX, innerCenterY, 0]} rotation={[0, 0, innerRotation]} material={GOLD}>
-        <boxGeometry args={[wingInner, 0.025, 0.3]} />
+        <boxGeometry args={[wingInner, 0.014, 0.3]} />
       </mesh>
 
-      {/* Äusserer Flügel - nach oben/aussen zur Wand */}
+      {/* Äusserer Flügel - nach oben/aussen zur Wand, gegenläufiger Knick */}
       <mesh position={[outerCenterX, outerCenterY, 0]} rotation={[0, 0, outerRotation]} material={GOLD}>
-        <boxGeometry args={[wingOuter, 0.025, 0.3]} />
+        <boxGeometry args={[wingOuter, 0.014, 0.3]} />
       </mesh>
 
-      {/* Gefieder-Schichten zur Würde */}
-      <mesh position={[innerCenterX, innerCenterY - 0.04, 0]} rotation={[0, 0, innerRotation + facing * 0.12]} material={GOLD}>
-        <boxGeometry args={[wingInner * 0.85, 0.018, 0.2]} />
+      {/* Gefieder-Schichten zur Würde: zweite, leicht verkippte Fläche
+          pro Segment (wirkt gebogen, B5) */}
+      <mesh position={[innerCenterX, innerCenterY - 0.035, 0.02]} rotation={[0.06, 0, innerRotation + facing * 0.14]} material={GOLD}>
+        <boxGeometry args={[wingInner * 0.85, 0.012, 0.2]} />
       </mesh>
-      <mesh position={[outerCenterX, outerCenterY - 0.04, 0]} rotation={[0, 0, outerRotation - facing * 0.1]} material={GOLD}>
-        <boxGeometry args={[wingOuter * 0.85, 0.018, 0.2]} />
+      <mesh position={[outerCenterX, outerCenterY - 0.035, 0.02]} rotation={[-0.06, 0, outerRotation - facing * 0.12]} material={GOLD}>
+        <boxGeometry args={[wingOuter * 0.85, 0.012, 0.2]} />
       </mesh>
     </group>
   );
