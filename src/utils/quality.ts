@@ -80,27 +80,42 @@ function isMobileUA(): boolean {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
+let _cachedQuality: QualityTier | null = null;
+
 export function detectQuality(): QualityTier {
+  // Memoisiert (Re-Review-Befund): detectQuality() wird bei Store-Init +
+  // 6-7 Komponenten aufgerufen — ohne Cache wuerde jedes Mal ein Canvas +
+  // WebGL-Kontext erzeugt (Kontext-Limit-/Startup-Risiko auf Mobile).
+  if (_cachedQuality) return _cachedQuality;
+  let result: QualityTier;
   // 1) URL-Param-Override (?quality=low / ?quality=high)
   if (typeof window !== 'undefined') {
     const url = new URLSearchParams(window.location.search).get('quality');
-    if (url === 'low' || url === 'high') return url;
+    if (url === 'low' || url === 'high') result = url;
     // 2) localStorage-Override (dauerhaft gesetzt, URL hat Vorrang)
-    try {
-      const stored = localStorage.getItem('quality');
-      if (stored === 'low' || stored === 'high') return stored;
-    } catch {
-      /* localStorage blockiert — Heuristik faellt durch */
+    else {
+      try {
+        const stored = localStorage.getItem('quality');
+        if (stored === 'low' || stored === 'high') result = stored;
+      } catch {
+        /* localStorage blockiert — Heuristik faellt durch */
+      }
     }
   }
 
   // 3) Mobile-Heuristik: nur mobile UA kann auf 'low' fallen,
   //    und nur bei schwachem Speicher/CPU/GPU
-  if (!isMobileUA()) return 'high';
-  const nav = navigator as Navigator & { deviceMemory?: number };
-  const weak =
-    (nav.deviceMemory ?? 8) <= 4 ||
-    (navigator.hardwareConcurrency ?? 8) <= 6 ||
-    WEAK_GPU.test(detectGpuString());
-  return weak ? 'low' : 'high';
+  if (!result) {
+    if (!isMobileUA()) result = 'high';
+    else {
+      const nav = navigator as Navigator & { deviceMemory?: number };
+      const weak =
+        (nav.deviceMemory ?? 8) <= 4 ||
+        (navigator.hardwareConcurrency ?? 8) <= 6 ||
+        WEAK_GPU.test(detectGpuString());
+      result = weak ? 'low' : 'high';
+    }
+  }
+  _cachedQuality = result;
+  return result;
 }

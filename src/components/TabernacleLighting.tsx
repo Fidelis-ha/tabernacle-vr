@@ -16,7 +16,7 @@ import { detectQuality, QUALITY_SETTINGS } from '../utils/quality';
 // Sonnenrichtung: sued-westliche Nachmittagssonne, ~20 Grad Elevation
 // (-x = sued, +z = west) — EINE geteilte Konstante fuer Sky, DirectionalLight
 // und Env-Sonne (Scene.tsx importiert sie)
-export const SUN_DIRECTION: [number, number, number] = [-34, 16, 18];
+export const SUN_DIRECTION: [number, number, number] = [-34, 22, 18]; // y angehoben (Re-Review: Glare-Band am Horizont — hoeher stehende Sonne brennt den Horizont nicht mehr aus)
 const COURTYARD_CENTER: [number, number, number] = [0, 0, 22.5];
 
 export function TabernacleLighting() {

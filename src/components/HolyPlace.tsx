@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
@@ -27,6 +27,7 @@ import {
   FLAME,
 } from '../utils/materials';
 import { Instanced, ropeTransform, type InstanceTransform, type Vec3 } from '../utils/instancing';
+import { mergeParts, type MergePart } from '../utils/merge';
 
 // Heiligen nach Ex 26,15-37 / SPEC:
 // Stiftshütte: 30 Ellen lang (13,5m, z = 31,5 ... 45), 10 Ellen breit (4,5m), 10 Ellen hoch (4,5m)
@@ -71,6 +72,129 @@ const footStep3Geo = new THREE.CylinderGeometry(0.075, 0.1, 0.045, 14);
 const calotteGeo = new THREE.ConeGeometry(0.015, 0.024, 6);                 // Blütenkalotte
 const calyxGeo = new THREE.ConeGeometry(0.026, 0.05, 8);                    // Kelchblüte (invers)
 const flamePlaneGeo = new THREE.PlaneGeometry(0.032, 0.064);                // Flamme (2 Ebenen)
+
+// === P1 Draw-Call-Merge: statische GOLD-Teile je Geraet in EINE Geometrie
+// (Vorbild Animals.tsx bodyGeo); animierte Ebenen (Flammen) bleiben einzeln ===
+
+// --- Menora (Ex 25,31-40) ---
+const MENORA_PAIRS = [
+  { lampX: 0.11, elbowY: 0.42 },
+  { lampX: 0.21, elbowY: 0.58 },
+  { lampX: 0.31, elbowY: 0.74 },
+];
+const MENORA_LAMP_Y = 0.98;
+const MENORA_STEM_BASE_Y = 0.12;
+const MENORA_STEM_TOP = 0.95;
+const menoraStemGeo = new THREE.CylinderGeometry(0.022, 0.03, MENORA_STEM_TOP - MENORA_STEM_BASE_Y, 8);
+
+function menoraBranchGeo(points: Vec3[]): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+  return new THREE.TubeGeometry(curve, 24, 0.016, 8, false);
+}
+
+const menoraGoldGeo: THREE.BufferGeometry = (() => {
+  const parts: MergePart[] = [
+    { geo: footStep1Geo, p: [0, 0.0225, 0] },
+    { geo: footStep2Geo, p: [0, 0.065, 0] },
+    { geo: footStep3Geo, p: [0, 0.1075, 0] },
+    { geo: menoraStemGeo, p: [0, MENORA_STEM_BASE_Y + (MENORA_STEM_TOP - MENORA_STEM_BASE_Y) / 2, 0] },
+  ];
+  for (const y of [0.3, 0.55, 0.8]) {
+    parts.push({ geo: knopGeo, p: [0, y, 0] });
+    parts.push({ geo: calotteGeo, p: [0, y + 0.032, 0] });
+    parts.push({ geo: calotteGeo, p: [0, y - 0.032, 0], r: [Math.PI, 0, 0] });
+  }
+  for (const pr of MENORA_PAIRS) {
+    const midY = pr.elbowY + (MENORA_LAMP_Y - pr.elbowY) * 0.45;
+    for (const side of [-1, 1]) {
+      parts.push({
+        geo: menoraBranchGeo([
+          [side * 0.02, pr.elbowY, 0],
+          [side * pr.lampX * 0.4, pr.elbowY + (midY - pr.elbowY) * 0.5, 0],
+          [side * pr.lampX * 0.75, midY, 0],
+          [side * pr.lampX, MENORA_LAMP_Y, 0],
+        ]),
+      });
+      parts.push({ geo: knopGeoSmall, p: [side * pr.lampX * 0.55, (pr.elbowY + midY) / 2, 0] });
+    }
+  }
+  for (const x of [0, ...MENORA_PAIRS.map((p) => p.lampX * -1), ...MENORA_PAIRS.map((p) => p.lampX)]) {
+    parts.push({ geo: lampGeo, p: [x, MENORA_LAMP_Y, 0] });
+    parts.push({ geo: calyxGeo, p: [x, MENORA_LAMP_Y - 0.05, 0], r: [Math.PI, 0, 0] });
+  }
+  parts.push({ geo: new THREE.CylinderGeometry(0.02, 0.014, 0.016, 8), p: [0.19, 0.008, 0.09] });
+  parts.push({ geo: new THREE.CylinderGeometry(0.017, 0.012, 0.014, 8), p: [0.25, 0.007, 0.01] });
+  parts.push({ geo: new THREE.BoxGeometry(0.045, 0.006, 0.007), p: [0.209, 0.004, -0.05], r: [0, 0.26, 0] });
+  parts.push({ geo: new THREE.BoxGeometry(0.045, 0.006, 0.007), p: [0.231, 0.004, -0.05], r: [0, 0.54, 0] });
+  return mergeParts(parts);
+})();
+
+// --- Schaubrottisch (Ex 25,23-30): 0,9 x 0,45 x 0,675 m ---
+const TABLE_W = 2 * CUBIT;
+const TABLE_D = CUBIT;
+const TABLE_H = 1.5 * CUBIT;
+const TABLE_TOP_Y = TABLE_H;
+
+const tableGoldGeo: THREE.BufferGeometry = (() => {
+  const legPos: [number, number][] = [];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      legPos.push([sx * (TABLE_W / 2 - 0.06), sz * (TABLE_D / 2 - 0.06)]);
+    }
+  }
+  const parts: MergePart[] = [
+    { geo: new THREE.BoxGeometry(TABLE_W, 0.05, TABLE_D), p: [0, TABLE_TOP_Y - 0.025, 0] },
+    { geo: crownTorusGeo, p: [0, TABLE_TOP_Y + 0.015, 0], r: [Math.PI / 2, 0, 0] },
+    { geo: crownTorusGeo, p: [0, TABLE_TOP_Y + 0.042, 0], r: [Math.PI / 2, 0, 0], s: [0.94, 0.94, 1] },
+  ];
+  for (const [px, pz] of legPos) {
+    parts.push({ geo: tableLegGeo, p: [px, TABLE_H / 2 - 0.05, pz] });
+    parts.push({ geo: tableLegFootGeo, p: [px, 0.012, pz], r: [Math.PI / 2, 0, 0] });
+    parts.push({ geo: cornerRingGeo, p: [px, TABLE_H - 0.12, pz], r: [0, Math.PI / 2, 0] });
+  }
+  for (const pz of [-TABLE_D / 2 + 0.06, TABLE_D / 2 - 0.06]) {
+    parts.push({
+      geo: new THREE.CylinderGeometry(0.022, 0.022, TABLE_W + 0.5, 8),
+      p: [0, TABLE_H - 0.12, pz],
+      r: [0, 0, Math.PI / 2],
+    });
+  }
+  parts.push({ geo: new THREE.CylinderGeometry(0.035, 0.025, 0.06, 8), p: [-TABLE_W / 2 + 0.09, TABLE_TOP_Y + 0.035, TABLE_D / 4] });
+  parts.push({ geo: new THREE.CylinderGeometry(0.03, 0.02, 0.05, 8), p: [-TABLE_W / 2 + 0.09, TABLE_TOP_Y + 0.035, -TABLE_D / 4] });
+  parts.push({ geo: new THREE.SphereGeometry(0.045, 10, 10), p: [TABLE_W / 2 - 0.09, TABLE_TOP_Y + 0.06, 0] });
+  parts.push({ geo: new THREE.CylinderGeometry(0.014, 0.02, 0.06, 8), p: [TABLE_W / 2 - 0.09, TABLE_TOP_Y + 0.12, 0] });
+  return mergeParts(parts);
+})();
+
+// --- Raeucheraltar (Ex 30,1-10): 0,45 x 0,45 x 0,9 m ---
+const INCENSE_SIZE = CUBIT;
+const INCENSE_HEIGHT = 2 * CUBIT;
+
+const incenseGoldGeo: THREE.BufferGeometry = (() => {
+  const s = INCENSE_SIZE;
+  const h = INCENSE_HEIGHT;
+  const parts: MergePart[] = [
+    { geo: new THREE.BoxGeometry(s, h, s), p: [0, h / 2, 0] },
+    { geo: new THREE.BoxGeometry(s + 0.06, 0.04, s + 0.06), p: [0, h + 0.02, 0] },
+  ];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push({ geo: incenseHornGeo, p: [(sx * s) / 2, h + 0.04, (sz * s) / 2] });
+    }
+  }
+  for (const sx of [-1, 1]) {
+    parts.push({ geo: incenseRingGeo, p: [sx * (s / 2 + 0.02), 0.3, 0], r: [Math.PI / 2, 0, 0] });
+  }
+  return mergeParts(parts);
+})();
+
+const incenseStavesGeo: THREE.BufferGeometry = (() => {
+  const s = INCENSE_SIZE;
+  return mergeParts([
+    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 0.3, 8), p: [-(s / 2 + 0.02), 0.3, 0] },
+    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 0.3, 8), p: [s / 2 + 0.02, 0.3, 0] },
+  ]);
+})();
 
 export function HolyPlace() {
   return (
@@ -282,30 +406,12 @@ const entranceShaftGeo = new THREE.CylinderGeometry(0.05, 0.06, TENT_HEIGHT, 8);
 const entranceCapGeo = new THREE.CylinderGeometry(0.07, 0.045, 0.1, 8);
 
 // Zeichnet einen goldenen gebogenen Arm entlang einer CatmullRomCurve3
-// (mandelförmiger Schwung der Menora-Arme, Ex 25,31-36)
-function CurvedBranch({ points }: { points: Vec3[] }) {
-  const geometry = useMemo(() => {
-    const curve = new THREE.CatmullRomCurve3(
-      points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
-    );
-    return new THREE.TubeGeometry(curve, 24, 0.016, 8, false);
-  }, [points]);
-
-  return <mesh geometry={geometry} material={GOLD} />;
-}
+// (mandelförmiger Schwung der Menora-Arme, Ex 25,31-36) — in menoraGoldGeo
+// eingebacken (P1 Merge), hier nur noch die animierten Flammen-Ebenen.
 
 function Menora({ position }: { position: Vec3 }) {
   // 2. Mose 25,31-40 - ein Talent Gold, ~1 Elle (≈1m) hoch
   // 7 Arme (3 Paare + Mittelschaft), Mandelblüten-Knäufe, Öllämpchen mit Flammen
-  const baseY = 0.12;
-  const stemTop = 0.95;
-  const lampY = 0.98;
-  const pairs: Array<{ lampX: number; elbowY: number }> = [
-    { lampX: 0.11, elbowY: 0.42 },
-    { lampX: 0.21, elbowY: 0.58 },
-    { lampX: 0.31, elbowY: 0.74 },
-  ];
-
   // Flammen-Animation: y-Scale +-15%, Phasen versetzt (keine Allokation pro Frame)
   const flameRefs = useRef<(THREE.Group | null)[]>([]);
   useFrame((state) => {
@@ -318,58 +424,18 @@ function Menora({ position }: { position: Vec3 }) {
       f.rotation.y = t * 0.5 + i * 0.7;
     }
   });
+  const lampXs = [0, ...MENORA_PAIRS.map((p) => p.lampX * -1), ...MENORA_PAIRS.map((p) => p.lampX)];
 
   return (
     <group position={position}>
-      {/* Fuss: gestufter Sockel aus 3 Zylinder-Stufen (B1) */}
-      <mesh position={[0, 0.0225, 0]} geometry={footStep1Geo} material={GOLD} castShadow />
-      <mesh position={[0, 0.065, 0]} geometry={footStep2Geo} material={GOLD} />
-      <mesh position={[0, 0.1075, 0]} geometry={footStep3Geo} material={GOLD} />
+      {/* Gesamte GOLD-Struktur (Fuss, Schaft, Arme, Knaeufe, Laempchen,
+          Geraete) als EINE gemergte Geometrie (P1 Draw-Call-Merge) */}
+      <mesh position={[0, 0, 0]} geometry={menoraGoldGeo} material={GOLD} castShadow />
 
-      {/* Mittelschaft - konisch leicht zulaufend */}
-      <mesh position={[0, baseY + (stemTop - baseY) / 2, 0]} material={GOLD} castShadow>
-        <cylinderGeometry args={[0.022, 0.03, stemTop - baseY, 8]} />
-      </mesh>
-
-      {/* 3 Mandelblüten-Knäufe, jeder mit Blütenkalotte (kleiner Kegel)
-          darueber UND darunter (B1) */}
-      {[0.3, 0.55, 0.8].map((y, i) => (
-        <group key={`knop-${i}`} position={[0, y, 0]}>
-          <mesh geometry={knopGeo} material={GOLD} />
-          <mesh position={[0, 0.032, 0]} geometry={calotteGeo} material={GOLD} />
-          <mesh position={[0, -0.032, 0]} rotation={[Math.PI, 0, 0]} geometry={calotteGeo} material={GOLD} />
-        </group>
-      ))}
-
-      {/* 3 Paar gebogener Arme (CatmullRom-Schwünge) */}
-      {pairs.map((p, i) =>
-        [-1, 1].map((side) => {
-          const midY = p.elbowY + (lampY - p.elbowY) * 0.45;
-          const midX = side * p.lampX * 0.75;
-          return (
-            <group key={`branch-${i}-${side}`}>
-              <CurvedBranch
-                points={[
-                  [side * 0.02, p.elbowY, 0],
-                  [side * p.lampX * 0.4, p.elbowY + (midY - p.elbowY) * 0.5, 0],
-                  [midX, midY, 0],
-                  [side * p.lampX, lampY, 0],
-                ]}
-              />
-              {/* Blütenknauf am Schwung */}
-              <mesh position={[side * p.lampX * 0.55, (p.elbowY + midY) / 2, 0]} geometry={knopGeoSmall} material={GOLD} />
-            </group>
-          );
-        })
-      )}
-
-      {/* 7 Lämpchen: Schale + Kelchblüte (inverser Kegel) darunter, mit
-          Flammen als 2 gekreuzte, leicht transparente Ebenen (B1) —
-          EIN geteiltes FLAME-Material */}
-      {[0, ...pairs.map((p) => p.lampX * -1), ...pairs.map((p) => p.lampX)].map((x, i) => (
-        <group key={`lamp-${i}`} position={[x, lampY, 0]}>
-          <mesh geometry={lampGeo} material={GOLD} />
-          <mesh position={[0, -0.05, 0]} rotation={[Math.PI, 0, 0]} geometry={calyxGeo} material={GOLD} />
+      {/* 7 Flammen als 2 gekreuzte, leicht transparente Ebenen (B1),
+          EIN geteiltes FLAME-Material, animiert */}
+      {lampXs.map((x, i) => (
+        <group key={`flame-${i}`} position={[x, MENORA_LAMP_Y, 0]}>
           <group ref={(g) => { flameRefs.current[i] = g; }} position={[0, 0.055, 0]}>
             <mesh geometry={flamePlaneGeo} material={FLAME} />
             <mesh geometry={flamePlaneGeo} material={FLAME} rotation={[0, Math.PI / 2, 0]} />
@@ -377,23 +443,6 @@ function Menora({ position }: { position: Vec3 }) {
         </group>
       ))}
 
-      {/* Goldene Geräte des Leuchters (Ex 25,38): Zangen und Snuffschaalen */}
-      <mesh position={[0.19, 0.008, 0.09]} material={GOLD}>
-        <cylinderGeometry args={[0.02, 0.014, 0.016, 8]} />
-      </mesh>
-      <mesh position={[0.25, 0.007, 0.01]} material={GOLD}>
-        <cylinderGeometry args={[0.017, 0.012, 0.014, 8]} />
-      </mesh>
-      {[-1, 1].map((s) => (
-        <mesh
-          key={`tongs-${s}`}
-          position={[0.22 + s * 0.011, 0.004, -0.05]}
-          rotation={[0, 0.4 + s * 0.14, 0]}
-          material={GOLD}
-        >
-          <boxGeometry args={[0.045, 0.006, 0.007]} />
-        </mesh>
-      ))}
       {/* Flackerndes Licht der Menora lebt in TabernacleLighting (kein Duplikat) */}
     </group>
   );
@@ -401,17 +450,12 @@ function Menora({ position }: { position: Vec3 }) {
 
 function ShowbreadTable({ position }: { position: Vec3 }) {
   // 2. Mose 25,23-30 - 2 x 1 x 1,5 Ellen (0,9 x 0,45 x 0,675m), Akazien mit Gold überzogen
-  const w = 2 * CUBIT;   // 0,9m
-  const d = 1 * CUBIT;   // 0,45m
-  const h = 1.5 * CUBIT; // 0,675m - NICHT 2,5 Ellen!
-  const topY = h;
-
   // 12 Schaubrote: 2 Stapel à 6 (Ex 25,30 / 3. Mose 24,5-9) als InstancedMesh
   const loaves: InstanceTransform[] = [];
   for (const stackX of [-0.2, 0.2]) {
     for (let j = 0; j < 6; j++) {
       loaves.push({
-        position: [stackX, topY + 0.045 + j * 0.042, 0],
+        position: [stackX, TABLE_TOP_Y + 0.045 + j * 0.042, 0],
         rotation: [0, j % 2 === 0 ? 0.12 : -0.12, 0],
       });
     }
@@ -419,60 +463,12 @@ function ShowbreadTable({ position }: { position: Vec3 }) {
 
   return (
     <group position={position}>
-      {/* Platte */}
-      <mesh position={[0, topY - 0.025, 0]} material={GOLD} castShadow>
-        <boxGeometry args={[w, 0.05, d]} />
-      </mesh>
-
-      {/* Goldener Doppelkranz als gedrechselte Welle: zwei überlagerte,
-          gestuft skalierte Ringe (B3) */}
-      <mesh position={[0, topY + 0.015, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={crownTorusGeo} material={GOLD} />
-      <mesh position={[0, topY + 0.042, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={crownTorusGeo} scale={[0.94, 0.94, 1]} material={GOLD} />
-
-      {/* 4 Beine (profilierter Zylinder) mit Ring-Fuss (geteilte Geometrien, B3) */}
-      {[
-        [-w / 2 + 0.06, d / 2 - 0.06],
-        [w / 2 - 0.06, d / 2 - 0.06],
-        [-w / 2 + 0.06, -d / 2 + 0.06],
-        [w / 2 - 0.06, -d / 2 + 0.06],
-      ].map((pos, i) => (
-        <group key={`leg-${i}`}>
-          <mesh position={[pos[0], h / 2 - 0.05, pos[1]]} geometry={tableLegGeo} material={GOLD} />
-          <mesh position={[pos[0], 0.012, pos[1]]} rotation={[Math.PI / 2, 0, 0]} geometry={tableLegFootGeo} material={GOLD} />
-        </group>
-      ))}
-
-      {/* 4 goldene Ringe an den Ecken + Tragstangen (Ex 25,26-28) */}
-      {[
-        [-w / 2 + 0.06, d / 2 - 0.06],
-        [w / 2 - 0.06, d / 2 - 0.06],
-        [-w / 2 + 0.06, -d / 2 + 0.06],
-        [w / 2 - 0.06, -d / 2 + 0.06],
-      ].map((pos, i) => (
-        <mesh key={`ring-${i}`} position={[pos[0], h - 0.12, pos[1]]} rotation={[0, Math.PI / 2, 0]} geometry={cornerRingGeo} material={GOLD} />
-      ))}
-      {[-d / 2 + 0.06, d / 2 - 0.06].map((z, i) => (
-        <mesh key={`stave-${i}`} position={[0, h - 0.12, z]} rotation={[0, 0, Math.PI / 2]} material={GOLD}>
-          <cylinderGeometry args={[0.022, 0.022, w + 0.5, 8]} />
-        </mesh>
-      ))}
+      {/* Platte + Doppelskranz + Beine + Ringfuesse + Eckenringe +
+          Tragstangen + Geraete: EINE gemergte GOLD-Geometrie (P1 Merge) */}
+      <mesh geometry={tableGoldGeo} material={GOLD} castShadow />
 
       {/* Schaubrote: 2 Stapel à 6 - instanziert */}
       <Instanced geometry={loavesGeo} material={BREAD} transforms={loaves} />
-
-      {/* Goldene Geräte: Schalen, Löffel, Kannen (Ex 25,29) */}
-      <mesh position={[-w / 2 + 0.09, topY + 0.035, d / 4]} material={GOLD}>
-        <cylinderGeometry args={[0.035, 0.025, 0.06, 8]} />
-      </mesh>
-      <mesh position={[-w / 2 + 0.09, topY + 0.035, -d / 4]} material={GOLD}>
-        <cylinderGeometry args={[0.03, 0.02, 0.05, 8]} />
-      </mesh>
-      <mesh position={[w / 2 - 0.09, topY + 0.06, 0]} material={GOLD}>
-        <sphereGeometry args={[0.045, 10, 10]} />
-      </mesh>
-      <mesh position={[w / 2 - 0.09, topY + 0.12, 0]} material={GOLD}>
-        <cylinderGeometry args={[0.014, 0.02, 0.06, 8]} />
-      </mesh>
     </group>
   );
 }
@@ -480,53 +476,27 @@ function ShowbreadTable({ position }: { position: Vec3 }) {
 function IncenseAltar({ position }: { position: Vec3 }) {
   // 2. Mose 30,1-10 - 1 x 1 x 2 Ellen, Akazien mit Gold überzogen, 4 Hörner,
   // steht direkt vor dem Vorhang des Allerheiligsten
-  const size = 1 * CUBIT;   // 0,45m
-  const height = 2 * CUBIT; // 0,9m
-
   return (
     <group position={position}>
-      {/* Korpus - gold überzogen (grosse Silhouette) */}
-      <mesh position={[0, height / 2, 0]} material={GOLD} castShadow>
-        <boxGeometry args={[size, height, size]} />
-      </mesh>
-
-      {/* Goldene Kranzleiste oben */}
-      <mesh position={[0, height + 0.02, 0]} material={GOLD}>
-        <boxGeometry args={[size + 0.06, 0.04, size + 0.06]} />
-      </mesh>
-
-      {/* Vier Hörner an den oberen Ecken (geteilte Geometrie) */}
-      {[
-        [-size / 2, height + 0.04, -size / 2],
-        [size / 2, height + 0.04, -size / 2],
-        [-size / 2, height + 0.04, size / 2],
-        [size / 2, height + 0.04, size / 2],
-      ].map((pos, i) => (
-        <mesh key={`horn-${i}`} position={pos as Vec3} geometry={incenseHornGeo} material={GOLD} />
-      ))}
+      {/* Korpus + Kranzleiste + 4 Hoerner + Ringe: EINE gemergte
+          GOLD-Geometrie (P1 Merge, grosse Silhouette) */}
+      <mesh geometry={incenseGoldGeo} material={GOLD} castShadow />
 
       {/* Glühende Räucherkohle - eigene emissive Instanz */}
-      <mesh position={[0, height + 0.045, 0]}>
+      <mesh position={[0, INCENSE_HEIGHT + 0.045, 0]}>
         <cylinderGeometry args={[0.12, 0.12, 0.02, 12]} />
         <meshStandardMaterial color={0xFF5522} emissive={0xCC3300} emissiveIntensity={2.2} />
       </mesh>
 
-      {/* Goldene Ringe + Stangen (Ex 30,4-5) */}
-      {[-size / 2 - 0.02, size / 2 + 0.02].map((x, i) => (
-        <mesh key={`ring-${i}`} position={[x, 0.3, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={incenseRingGeo} material={GOLD} />
-      ))}
-      {[-size / 2 - 0.02, size / 2 + 0.02].map((x, i) => (
-        <mesh key={`stave-${i}`} position={[x, 0.3, 0]} material={ACACIA_WOOD}>
-          <cylinderGeometry args={[0.02, 0.02, size + 0.3, 8]} />
-        </mesh>
-      ))}
+      {/* Tragstangen (Akazien) - gemergt (P1) */}
+      <mesh geometry={incenseStavesGeo} material={ACACIA_WOOD} />
 
       {/* Räucherhauch + warmes Kohlenlicht (kein Schatten) */}
-      <mesh position={[0, height + 0.3, 0]}>
+      <mesh position={[0, INCENSE_HEIGHT + 0.3, 0]}>
         <sphereGeometry args={[0.09, 8, 8]} />
         <meshStandardMaterial color={0xFFFFFF} transparent opacity={0.07} />
       </mesh>
-      <pointLight position={[0, height + 0.2, 0]} intensity={0.5} color={0xFF8833} distance={4} decay={2} />
+      <pointLight position={[0, INCENSE_HEIGHT + 0.2, 0]} intensity={0.5} color={0xFF8833} distance={4} decay={2} />
     </group>
   );
 }

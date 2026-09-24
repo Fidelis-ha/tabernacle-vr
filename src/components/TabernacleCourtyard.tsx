@@ -12,6 +12,7 @@ import {
 } from './TabernacleFloor';
 import { SILVER, BRONZE, BYSSUS, GATE_MAT, ROPE, WATER, ACACIA_WOOD, FLAME } from '../utils/materials';
 import { Instanced, ropeTransform, type InstanceTransform, type Vec3 } from '../utils/instancing';
+import { mergeParts, type MergePart } from '../utils/merge';
 
 // Vorhof nach Ex 27,9-19 / SPEC:
 // 100 Ellen (45m) lang (z = 0 ... 45) x 50 Ellen (22,5m) breit (x = -11,25 ... 11,25)
@@ -59,6 +60,71 @@ const gateGeo = (() => {
   geo.computeVertexNormals();
   return geo;
 })();
+
+// === P1 Draw-Call-Merge: statische Bronze-Teile je Geraet in EINE Geometrie;
+// Feuer-Kegel (animiert) und Wasserflaeche bleiben einzeln ===
+
+// --- Brandopferaltar (Ex 27,1-8): 5 x 5 Ellen, 3 Ellen hoch ---
+const ALTAR_SIZE = 5 * CUBIT;    // 2,25m
+const ALTAR_HEIGHT = 3 * CUBIT;  // 1,35m
+const ALTAR_WALL_T = 0.1;
+
+const altarBronzeGeo: THREE.BufferGeometry = (() => {
+  const s = ALTAR_SIZE;
+  const h = ALTAR_HEIGHT;
+  const t = ALTAR_WALL_T;
+  const parts: MergePart[] = [
+    // Erhöhung / Einfassung: 4 schmale Balken (Ex 27,5 "wegen des Rostes")
+    { geo: new THREE.BoxGeometry(s + 0.15, 0.08, 0.15), p: [0, h + 0.03, -(s + 0.15) / 2 + 0.075] },
+    { geo: new THREE.BoxGeometry(s + 0.15, 0.08, 0.15), p: [0, h + 0.03, (s + 0.15) / 2 - 0.075] },
+    { geo: new THREE.BoxGeometry(0.15, 0.08, s - 0.15), p: [-(s + 0.15) / 2 + 0.075, h + 0.03, 0] },
+    { geo: new THREE.BoxGeometry(0.15, 0.08, s - 0.15), p: [(s + 0.15) / 2 - 0.075, h + 0.03, 0] },
+    // Vier Wände, hohl im Inneren
+    { geo: new THREE.BoxGeometry(s + 0.15, h, t), p: [0, h / 2, -s / 2] },
+    { geo: new THREE.BoxGeometry(s + 0.15, h, t), p: [0, h / 2, s / 2] },
+    { geo: new THREE.BoxGeometry(t, h, s), p: [-s / 2, h / 2, 0] },
+    { geo: new THREE.BoxGeometry(t, h, s), p: [s / 2, h / 2, 0] },
+    // Gitter / Netzwerk (Ex 27,4-5)
+    { geo: new THREE.BoxGeometry(s - t, 0.05, s - t), p: [0, h * 0.5, 0] },
+  ];
+  for (const z of [-0.8, -0.4, 0, 0.4, 0.8]) {
+    parts.push({ geo: grateBarGeo, p: [0, h * 0.5 + 0.04, z] });
+  }
+  // Vier HÖRNER (Ex 27,2) mit abgerundeter Spitze
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push({ geo: altarHornGeo, p: [(sx * s) / 2, h + 0.14, (sz * s) / 2] });
+      parts.push({ geo: altarHornTipGeo, p: [(sx * s) / 2, h + 0.28, (sz * s) / 2] });
+    }
+  }
+  // Ringe an den vier UNTEREN Ecken (Ex 27,4)
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push({
+        geo: altarRingGeo,
+        p: [(sx * (s - 0.1)) / 2, 0.25, (sz * (s - 0.1)) / 2],
+        r: [0, Math.PI / 2, 0],
+      });
+    }
+  }
+  return mergeParts(parts);
+})();
+
+const altarPolesGeo: THREE.BufferGeometry = mergeParts([
+  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 1.2, 8), p: [0, 0.25, -ALTAR_SIZE / 2 + 0.05], r: [0, 0, Math.PI / 2] },
+  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 1.2, 8), p: [0, 0.25, ALTAR_SIZE / 2 - 0.05], r: [0, 0, Math.PI / 2] },
+]);
+
+// --- Bronzenes Waschbecken (Ex 30,18) ---
+const basinBronzeGeo: THREE.BufferGeometry = mergeParts([
+  // Kelchfuss: unterer Flare-Kegel + Stem-Kegel
+  { geo: new THREE.CylinderGeometry(0.14, 0.4, 0.35, 12), p: [0, 0.175, 0] },
+  { geo: new THREE.CylinderGeometry(0.3, 0.12, 0.65, 12), p: [0, 0.675, 0] },
+  // Beckenschale
+  { geo: new THREE.CylinderGeometry(0.8, 0.5, 0.5, 16), p: [0, 1.25, 0] },
+  // Beckenrand (elliptisch skaliert, B4)
+  { geo: new THREE.TorusGeometry(0.79, 0.035, 8, 24), p: [0, 1.5, 0], r: [Math.PI / 2, 0, 0], s: [1.15, 1, 1] },
+]);
 
 // Vorhangwaende: 20 Segmente, minimaler Sinus-Sag (~2,5cm pro Feld) —
 // der Stoff haengt zwischen den Saeulen leicht durch. bow: Vorzeichen der
@@ -233,11 +299,7 @@ export function TabernacleCourtyard() {
 }
 
 function BronzeAltar({ position }: { position: Vec3 }) {
-  // 2. Mose 27,1-8 - 5 x 5 Ellen, 3 Ellen hoch, Akazien mit Bronze überzogen, hohl
-  const size = 5 * CUBIT;    // 2,25m
-  const height = 3 * CUBIT;  // 1,35m
-  const wallT = 0.1;
-
+  // 2. Mose 27,1-8 - Akazien mit Bronze überzogen, hohl
   // Feuer-Animation: y-Scale +-15%, Phasen versetzt, langsam rotierend
   const fireRefs = useRef<(THREE.Mesh | null)[]>([]);
   const setFireRef = (i: number) => (m: THREE.Mesh | null) => { fireRefs.current[i] = m; };
@@ -253,81 +315,20 @@ function BronzeAltar({ position }: { position: Vec3 }) {
 
   return (
     <group position={position}>
-      {/* Erhöhung / Einfassung - Rahmen aus 4 schmalen Balken, damit Rost
-          und Feuer sichtbar bleiben (Ex 27,5 "wegen des Rostes") */}
-      <mesh position={[0, height + 0.03, -(size + 0.15) / 2 + 0.075]} material={BRONZE} castShadow>
-        <boxGeometry args={[size + 0.15, 0.08, 0.15]} />
-      </mesh>
-      <mesh position={[0, height + 0.03, (size + 0.15) / 2 - 0.075]} material={BRONZE} castShadow>
-        <boxGeometry args={[size + 0.15, 0.08, 0.15]} />
-      </mesh>
-      <mesh position={[-(size + 0.15) / 2 + 0.075, height + 0.03, 0]} material={BRONZE} castShadow>
-        <boxGeometry args={[0.15, 0.08, size - 0.15]} />
-      </mesh>
-      <mesh position={[(size + 0.15) / 2 - 0.075, height + 0.03, 0]} material={BRONZE} castShadow>
-        <boxGeometry args={[0.15, 0.08, size - 0.15]} />
-      </mesh>
-
-      {/* Vier Wände - hohl im Inneren (grosse Silhouette) */}
-      <mesh position={[0, height / 2, -size / 2]} material={BRONZE} castShadow>
-        <boxGeometry args={[size + 0.15, height, wallT]} />
-      </mesh>
-      <mesh position={[0, height / 2, size / 2]} material={BRONZE} castShadow>
-        <boxGeometry args={[size + 0.15, height, wallT]} />
-      </mesh>
-      <mesh position={[-size / 2, height / 2, 0]} material={BRONZE} castShadow>
-        <boxGeometry args={[wallT, height, size]} />
-      </mesh>
-      <mesh position={[size / 2, height / 2, 0]} material={BRONZE} castShadow>
-        <boxGeometry args={[wallT, height, size]} />
-      </mesh>
-
-      {/* Gitter / Netzwerk aus Bronze, mittig eingesetzt (Ex 27,4-5) */}
-      <mesh position={[0, height * 0.5, 0]} material={BRONZE}>
-        <boxGeometry args={[size - wallT, 0.05, size - wallT]} />
-      </mesh>
-      {[-0.8, -0.4, 0, 0.4, 0.8].map((z, i) => (
-        <mesh key={`grate-${i}`} position={[0, height * 0.5 + 0.04, z]} geometry={grateBarGeo} material={BRONZE} />
-      ))}
-
-      {/* Vier HÖRNER an den vier Ecken (Ex 27,2) - leicht konisch mit
-          abgerundeter Spitze via kleiner Kugel (B4) */}
-      {[
-        [-size / 2, height, -size / 2],
-        [size / 2, height, -size / 2],
-        [-size / 2, height, size / 2],
-        [size / 2, height, size / 2],
-      ].map((pos, i) => (
-        <group key={`horn-${i}`} position={pos as Vec3}>
-          <mesh position={[0, 0.14, 0]} geometry={altarHornGeo} material={BRONZE} />
-          <mesh position={[0, 0.28, 0]} geometry={altarHornTipGeo} material={BRONZE} />
-        </group>
-      ))}
+      {/* Rahmen + 4 Waende + Gitter + Rostbalken + 4 Hoerner + 4 Ringe:
+          EINE gemergte BRONZE-Geometrie (P1 Merge, grosse Silhouette) */}
+      <mesh geometry={altarBronzeGeo} material={BRONZE} castShadow />
 
       {/* Feuer auf dem Gitter - 3 überlappende Kegel, EIN geteiltes
           FLAME-Material, animiert (y-Scale +-15%, Phasen versetzt) */}
-      <mesh ref={setFireRef(0)} position={[0, height * 0.5 + 0.35, 0]} geometry={fireConeGeoL} material={FLAME} />
-      <mesh ref={setFireRef(1)} position={[0.18, height * 0.5 + 0.22, 0.1]} rotation={[0.12, 0, -0.15]} geometry={fireConeGeoM} material={FLAME} />
-      <mesh ref={setFireRef(2)} position={[-0.15, height * 0.5 + 0.18, -0.12]} rotation={[-0.1, 0, 0.18]} geometry={fireConeGeoS} material={FLAME} />
+      <mesh ref={setFireRef(0)} position={[0, ALTAR_HEIGHT * 0.5 + 0.35, 0]} geometry={fireConeGeoL} material={FLAME} />
+      <mesh ref={setFireRef(1)} position={[0.18, ALTAR_HEIGHT * 0.5 + 0.22, 0.1]} rotation={[0.12, 0, -0.15]} geometry={fireConeGeoM} material={FLAME} />
+      <mesh ref={setFireRef(2)} position={[-0.15, ALTAR_HEIGHT * 0.5 + 0.18, -0.12]} rotation={[-0.1, 0, 0.18]} geometry={fireConeGeoS} material={FLAME} />
 
       {/* Feuerschwingen übernimmt das flackernde Licht in TabernacleLighting */}
 
-      {/* Ringe an den vier UNTEREN Ecken (Ex 27,4) */}
-      {[
-        [-size / 2 + 0.05, 0.25, -size / 2 + 0.05],
-        [size / 2 - 0.05, 0.25, -size / 2 + 0.05],
-        [-size / 2 + 0.05, 0.25, size / 2 - 0.05],
-        [size / 2 - 0.05, 0.25, size / 2 - 0.05],
-      ].map((pos, i) => (
-        <mesh key={`ring-${i}`} position={pos as Vec3} rotation={[0, Math.PI / 2, 0]} geometry={altarRingGeo} material={BRONZE} />
-      ))}
-
-      {/* Tragstangen - Akazienholz mit Bronze überzogen (Ex 27,6-7) */}
-      {[-size / 2 + 0.05, size / 2 - 0.05].map((z, i) => (
-        <mesh key={`pole-${i}`} position={[0, 0.25, z]} rotation={[0, 0, Math.PI / 2]} material={ACACIA_WOOD}>
-          <cylinderGeometry args={[0.05, 0.05, size + 1.2, 8]} />
-        </mesh>
-      ))}
+      {/* Tragstangen - Akazienholz mit Bronze überzogen (Ex 27,6-7), gemergt */}
+      <mesh geometry={altarPolesGeo} material={ACACIA_WOOD} />
     </group>
   );
 }
@@ -338,28 +339,12 @@ function BronzeBasin({ position }: { position: Vec3 }) {
   // statische Wasserfläche, Bronze-Patina via BRONZE-Material
   return (
     <group position={position}>
-      {/* Kelchfuss: unterer Flare-Kegel + Stem-Kegel */}
-      <mesh position={[0, 0.175, 0]} material={BRONZE} castShadow>
-        <cylinderGeometry args={[0.14, 0.4, 0.35, 12]} />
-      </mesh>
-      <mesh position={[0, 0.675, 0]} material={BRONZE} castShadow>
-        <cylinderGeometry args={[0.3, 0.12, 0.65, 12]} />
-      </mesh>
-
-      {/* Beckenschale */}
-      <mesh position={[0, 1.25, 0]} material={BRONZE} castShadow>
-        <cylinderGeometry args={[0.8, 0.5, 0.5, 16]} />
-      </mesh>
+      {/* Fuss + Stem + Schale + Rand: EINE gemergte BRONZE-Geometrie (P1) */}
+      <mesh geometry={basinBronzeGeo} material={BRONZE} castShadow />
 
       {/* Wasserfläche (statisch, kein Wellen-Shader) */}
       <mesh position={[0, 1.42, 0]} material={WATER}>
         <cylinderGeometry args={[0.74, 0.6, 0.12, 16]} />
-      </mesh>
-
-      {/* Beckenrand — Torus flach gelegt (XY-Ebene -> XZ), elliptisch
-          skaliert (B4), y = Oberkante Becken */}
-      <mesh position={[0, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 1]} material={BRONZE}>
-        <torusGeometry args={[0.79, 0.035, 8, 24]} />
       </mesh>
     </group>
   );

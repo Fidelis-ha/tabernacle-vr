@@ -41,9 +41,9 @@ function generateHerd(): AnimalSpec[] {
   const anchors = TENT_SPECS;
 
   const tryPlace = (kind: AnimalSpec['kind']): boolean => {
-    // SICHTBARKEIT: Tiere in die OFFENEN Lücken ZWISCHEN den Zeltringen setzen
-    // (Radius-Band 26-36 m um das Zeltzentrum), nicht direkt hinter Zelten —
-    // sonst stehen sie verdeckt und wirken nicht vorhanden.
+    // SICHTBARKEIT (Re-Review-Befund 2): Tiere im offenen Ring 26-36 m,
+    // aber OHNE Kollision mit Zelten (TENT_SPECS, Freihalt 3 m) — und ein
+    // Teil bewusst in die Sichtachse vom Osttor (Spieler startet Richtung West).
     const ringA = rand() * Math.PI * 2;
     const ringR = 26 + rand() * 10;
     const x = Math.sin(ringA) * ringR;
@@ -55,6 +55,11 @@ function generateHerd(): AnimalSpec[] {
     const r = Math.hypot(dx, dz);
     if (r < 22) return false;
     if (dz < 0 && Math.abs(dx) < r * 0.55) return false; // Ostkeil
+    // KEINE Kollision mit Zelten (Re-Review-Befund 2): Freihalt ~3 m um
+    // jedes Zeltzentrum (Dachhalbbreite + Seile + Pflloecke)
+    for (const t of anchors) {
+      if (Math.hypot(t.x - x, t.z - z) < 3) return false;
+    }
     // Mindestabstand zu bereits platzierten Tieren
     for (const o of animals) {
       if (Math.hypot(o.x - x, o.z - z) < 1.6) return false;

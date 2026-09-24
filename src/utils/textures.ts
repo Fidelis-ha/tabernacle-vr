@@ -163,10 +163,12 @@ function makeLinen(): THREE.CanvasTexture {
   return toTexture(c, 10, 2);
 }
 
-// --- Ziegenhaar: grobe vertikale Struktur ---
+// --- Ziegenhaar: grobe vertikale Struktur (Basis aufgehellt: Re-Review-Befund
+//     "Zelte lesen sich als schwarze Silhouette" — dunkle Texturbasis x helle
+//     Materialfarbe ergab trotzdem fast-schwarz) ---
 function makeGoatHair(): THREE.CanvasTexture {
   const [c, ctx] = makeCanvas(256);
-  ctx.fillStyle = '#55504A';
+  ctx.fillStyle = '#8A8378';
   ctx.fillRect(0, 0, 256, 256);
   for (let x = 0; x < 256; x += 2 + Math.random() * 5) {
     const dark = Math.random() > 0.5;
@@ -181,7 +183,7 @@ function makeGoatHair(): THREE.CanvasTexture {
   }
   // Querverbindungen (Webnaehte)
   for (let y = 24; y < 256; y += 42 + Math.random() * 20) {
-    ctx.strokeStyle = 'rgba(30,26,22,0.35)';
+    ctx.strokeStyle = 'rgba(30,26,22,0.5)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -278,8 +280,8 @@ function makeSmoke(): THREE.CanvasTexture {
     [78, 56, 28, 0.3],
   ] as const) {
     const g = ctx.createRadialGradient(dx, dy, 0, dx, dy, r);
-    g.addColorStop(0, `rgba(130,122,112,${a})`);
-    g.addColorStop(1, 'rgba(130,122,112,0)');
+    g.addColorStop(0, `rgba(96,86,74,${a})`);
+    g.addColorStop(1, 'rgba(96,86,74,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
   }
@@ -344,12 +346,12 @@ function makeGate(): THREE.CanvasTexture {
   // Goldfaeden als Wirkerei: dicke, kontrastreiche vertikale + horizontale
   // Goldlinien (2-3 px), damit die Wirkerei auch auf Distanz lesbar bleibt
   for (let x = 6; x < 256; x += 14) {
-    ctx.fillStyle = 'rgba(212,175,55,0.42)';
-    ctx.fillRect(x, 0, 2, 256);
+    ctx.fillStyle = 'rgba(212,175,55,0.6)';
+    ctx.fillRect(x, 0, 3, 256);
   }
   for (let y = 10; y < 256; y += 22) {
-    ctx.fillStyle = 'rgba(212,175,55,0.3)';
-    ctx.fillRect(0, y, 256, 3);
+    ctx.fillStyle = 'rgba(212,175,55,0.45)';
+    ctx.fillRect(0, y, 256, 4);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

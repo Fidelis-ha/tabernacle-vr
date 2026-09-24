@@ -101,33 +101,44 @@ function GroundStones() {
   const batches = useMemo(() => {
     const rand = mulberry32(9137);
     const perGeo: { matrix: THREE.Matrix4; color: THREE.Color }[][] = [[], [], [], []];
-    let placed = 0;
-    let guard = 0;
-    while (placed < count && guard < count * 60) {
-      guard++;
-      // Ring 12-22 m um die Vorhof-Mitte: Vorhof + unmittelbares Umfeld,
-      // ausserhalb der Zelt-Ringe (Camp ab 25 m), Ostkeil bleibt frei
-      const a = rand() * Math.PI * 2;
-      const r = 12 + rand() * 10;
-      const x = Math.sin(a) * r;
-      const z = 22.5 + Math.cos(a) * r;
-      if (Math.cos(a) < -0.72 && r < 16) continue; // Torbereich frei
-      if (isExcluded(x, z)) continue;
-      const g = Math.floor(rand() * 4);
-      const m = new THREE.Matrix4();
-      const q = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI)
-      );
-      const s = 0.5 + rand() * 1.1; // Grundgroesse, flach gedrueckt unten
-      m.compose(
-        new THREE.Vector3(x, 0.02 + s * 0.05, z),
-        q,
-        new THREE.Vector3(s, s * 0.55, s * (0.8 + rand() * 0.4))
-      );
-      const col = new THREE.Color(ROCK_COLORS[Math.floor(rand() * ROCK_COLORS.length)]);
-      col.offsetHSL(0, 0, (rand() - 0.5) * 0.06);
-      perGeo[g].push({ matrix: m, color: col });
-      placed++;
+    const placed: { x: number; z: number }[] = [];
+    // Gleichmaessige Ring-Abdeckung statt reiner Zufallsstreuung: Ringe im
+    // Abstand ~0,9 m von 12 bis 22 m, je Ring Winkelschritte passend zum
+    // Umfang (~0,9 m Bogenmass), Plus Jitter — Mindestabstand 0,9 m.
+    const minDist = 0.9;
+    for (let r = 12 + minDist / 2; r <= 22 && placed.length < count; r += minDist) {
+      const n = Math.max(1, Math.round((2 * Math.PI * r) / minDist));
+      for (let ai = 0; ai < n && placed.length < count; ai++) {
+        const a = ((ai + (rand() - 0.5) * 0.5) / n) * Math.PI * 2;
+        const rr = r + (rand() - 0.5) * 0.4;
+        const x = Math.sin(a) * rr;
+        const z = 22.5 + Math.cos(a) * rr;
+        if (Math.cos(a) < -0.72 && rr < 16) continue; // Torbereich frei
+        if (isExcluded(x, z)) continue;
+        let tooClose = false;
+        for (const p of placed) {
+          if (Math.hypot(p.x - x, p.z - z) < minDist) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (tooClose) continue;
+        placed.push({ x, z });
+        const g = Math.floor(rand() * 4);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI)
+        );
+        const s = 0.5 + rand() * 1.1; // Grundgroesse, flach gedrueckt unten
+        m.compose(
+          new THREE.Vector3(x, 0.02 + s * 0.05, z),
+          q,
+          new THREE.Vector3(s, s * 0.55, s * (0.8 + rand() * 0.4))
+        );
+        const col = new THREE.Color(ROCK_COLORS[Math.floor(rand() * ROCK_COLORS.length)]);
+        col.offsetHSL(0, 0, (rand() - 0.5) * 0.06);
+        perGeo[g].push({ matrix: m, color: col });
+      }
     }
     return perGeo;
   }, [count]);

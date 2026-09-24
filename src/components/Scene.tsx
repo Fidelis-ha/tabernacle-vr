@@ -66,11 +66,11 @@ function Clouds() {
             <spriteMaterial
               map={cloudTexture}
               transparent
-              opacity={(0.55 + (i % 3) * 0.1) * q.cloudOpacity}
+              opacity={(0.7 + (i % 3) * 0.1) * q.cloudOpacity}
               rotation={(i * 1.37) % Math.PI}
               depthWrite={false}
               fog={false}
-              color="#F2E6CE"
+              color="#FFFFFF"
             />
           </sprite>
         );
@@ -116,15 +116,16 @@ function Dunes() {
   );
 }
 
-// Debug-Kamera-Hook: ?debugcam=1 haengt camera+scene an window (Verifikation/Tests).
+// Debug-Kamera-Hook: ?debugcam=1 haengt camera+scene+renderer an window (Verifikation/Tests).
 function DebugCamHook() {
-  const { camera, scene } = useThree();
+  const { camera, scene, gl } = useThree();
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('debugcam') === '1') {
       (window as unknown as Record<string, unknown>).__CAMERA = camera;
       (window as unknown as Record<string, unknown>).__SCENE = scene;
+      (window as unknown as Record<string, unknown>).__RENDERER = gl;
     }
-  }, [camera, scene]);
+  }, [camera, scene, gl]);
   return null;
 }
 
@@ -139,10 +140,10 @@ export function Scene() {
       <Sky
         distance={400}
         sunPosition={SUN_DIRECTION}
-        turbidity={5}
+        turbidity={8}
         rayleigh={1.6}
-        mieCoefficient={0.002}
-        mieDirectionalG={0.75}
+        mieCoefficient={0.004}
+        mieDirectionalG={0.85}
       />
 
       {/* === WARMES STAUBIGES NEBELN an der Diorama-Horizontlinie ===

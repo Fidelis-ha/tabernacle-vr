@@ -235,7 +235,7 @@ export default function App() {
           gl.toneMappingExposure = 1.1;
           // Starkes Foveation für Standstill-Experience (Budget-Regel 6)
           gl.xr.setFoveation(1);
-          gl.setClearColor(0xD8C4A0);
+          gl.setClearColor(0xCFC2A6); // = Fog-Farbe (Re-Review: Tonunterschied im Horizont-Lückenband)
         }}
       >
         <XR store={store}>

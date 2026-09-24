@@ -117,10 +117,13 @@ function makeTentMaterial(color: number, offsetU: number): THREE.MeshLambertMate
   }
   return new THREE.MeshLambertMaterial({ color, map, side: THREE.DoubleSide });
 }
-const tentMatA = makeTentMaterial(0x9A7A58, 0);      // Basis
-const tentMatB = makeTentMaterial(0x7A6244, 0.37);   // abgedunkelt, Naht versetzt
-const tentMatC = makeTentMaterial(0xB29268, 0.71);   // aufgehellt, Naht versetzt
+const tentMatA = makeTentMaterial(0xB99A76, 0);      // Basis (Re-Review: aufgehellt — Zelte lasen als schwarze Silhouette)
+const tentMatB = makeTentMaterial(0x93794F, 0.37);   // abgedunkelt, Naht versetzt
+const tentMatC = makeTentMaterial(0xCFAE82, 0.71);   // aufgehellt, Naht versetzt
 const tentMats = [tentMatA, tentMatB, tentMatC];
+
+// Dunkle Eingangs-Oeffnung: eigenes, opakes Material (liest sich als Oeffnung)
+const DOOR_MAT = new THREE.MeshLambertMaterial({ color: 0x2A211A, side: THREE.DoubleSide });
 
 // Rauchpositionen bei Zeltgruppen (low-Tier: nur die ersten 3)
 const SMOKE_POSITIONS: Vec3[] = [
@@ -225,7 +228,7 @@ export function CampIsrael() {
       const phase = (t * 0.12 + i * 0.31) % 1;
       s.position.y = 0.6 + phase * 3.4;
       s.position.x = SMOKE_POSITIONS[i][0] + Math.sin(t * 0.25 + i * 1.7) * 0.5;
-      s.material.opacity = 0.42 * Math.sin(phase * Math.PI);
+      s.material.opacity = 0.55 * Math.sin(phase * Math.PI);
     }
   });
 
@@ -246,9 +249,8 @@ export function CampIsrael() {
       <Instanced geometry={guyRopeGeo} material={ROPE} transforms={parts.ropes} />
       <Instanced geometry={pegGeo} material={ACACIA_WOOD} transforms={parts.pegs} />
 
-      {/* Dunkle Eingangs-Oeffnungen (dunkle Stoffvariante liest sich als
-          Oeffnung; halbtransparent wuerde ein 4. Material kosten) */}
-      <Instanced geometry={doorGeo} material={tentMatB} transforms={parts.doors} />
+      {/* Dunkle Eingangs-Oeffnungen (eigenes dunkles Material) */}
+      <Instanced geometry={doorGeo} material={DOOR_MAT} transforms={parts.doors} />
 
       {/* Kleine Herdenzelte (20%, flache Kegel) */}
       <Instanced geometry={herdGeo} material={tentMatC} transforms={parts.herd} />
@@ -256,7 +258,7 @@ export function CampIsrael() {
       {/* 3-5 Rauchsäulen — eigenes Material pro Sprite (Opacity animiert) */}
       <group ref={smokeGroup}>
         {SMOKE_POSITIONS.slice(0, smokeCount).map((p, i) => (
-          <sprite key={`smoke-${i}`} position={p} scale={[2.4, 3.6, 1]}>
+          <sprite key={`smoke-${i}`} position={p} scale={[3.0, 4.5, 1]}>
             <spriteMaterial
               map={smokeTexture}
               transparent

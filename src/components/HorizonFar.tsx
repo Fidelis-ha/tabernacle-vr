@@ -30,7 +30,7 @@ function mulberry32(seed: number) {
 }
 
 const HAZE = new THREE.MeshLambertMaterial({ color: 0xC9B79A });
-const SILHOUETTE = new THREE.MeshLambertMaterial({ color: 0x6B5A48 });
+const SILHOUETTE = new THREE.MeshLambertMaterial({ color: 0x5A4A38, side: THREE.DoubleSide }); // DoubleSide: Palmen-Fronds sonst von hinten gecullt
 
 const hillGeo = new THREE.ConeGeometry(1, 1, 7);       // Huegel (flach skaliert)
 const houseGeo = new THREE.BoxGeometry(1, 1, 1);       // Wuerfel-Quader
