@@ -28,7 +28,10 @@ export interface AudioSettings {
 
 const defaultSettings: AudioSettings = {
   master: 0.7,
-  ambient: 0.4,
+  // SPEC-marc-voice2 A: Ambient auf 0% (Marc-Befund 1: Schafe stumm),
+  // Slider bleibt — User kann hochregeln. ambientGainNode initialisiert
+  // mit settings.ambient (initAudio) — beide Stellen konsistent.
+  ambient: 0,
   fire: 0.6,
   wind: 0.2,
   music: 0.35,
@@ -290,7 +293,50 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
 // Pause menu - rendered as DOM overlay OUTSIDE the Canvas (zustand-driven),
 // so it is visible at any position in the world.
-export function GameUI() {
+
+// SPEC-marc-voice2 B: XR-Erkennung (navigator.xr + immersive-vr) als
+// useEffect/state-Hook — bei VR-Brille wird die Steuerungs-Box GAR NICHT
+// gerendert (Marc-Befund 2: keine Erklärung in VR).
+function useXRSupported(): boolean {
+  const [supported, setSupported] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const xr = (navigator as Navigator & { xr?: { isSessionSupported(mode: string): Promise<boolean> } }).xr;
+    if (!xr) return;
+    xr.isSessionSupported('immersive-vr')
+      .then((ok) => { if (!cancelled) setSupported(ok); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return supported;
+}
+
+// SPEC-marc-voice2 B: gerätespezifische Steuerungshinweise — NIEMALS alle
+// drei Varianten gemischt:
+//   Touch  → Joystick-Bewegung + Ziehen-Drehen (KEINE WASD-Zeilen)
+//   Desktop → WASD/Pfeile + Maus (KEINE VR-Zeile)
+//   XR verfügbar → Box GAR NICHT rendern
+function ControlHints({ isTouchDevice }: { isTouchDevice: boolean }) {
+  const xrSupported = useXRSupported();
+  if (xrSupported) return null;
+  return (
+    <div style={{ margin: '20px 0', fontSize: '13px', color: '#C9A84C' }}>
+      {isTouchDevice ? (
+        <>
+          <p style={{ margin: '8px 0' }}>🕹️ Joystick links - Bewegung</p>
+          <p style={{ margin: '8px 0' }}>Ziehen (rechte Hälfte) - Drehen</p>
+        </>
+      ) : (
+        <>
+          <p style={{ margin: '8px 0' }}>WASD / Pfeile - Bewegung</p>
+          <p style={{ margin: '8px 0' }}>Maus + Linksklick - Drehen</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function GameUI({ isTouchDevice }: { isTouchDevice: boolean }) {
   const isPaused = useGameStore((s) => s.isPaused);
   const togglePause = useGameStore((s) => s.togglePause);
   const setSettings = useGameStore((s) => s.setSettings);
@@ -383,11 +429,8 @@ export function GameUI() {
           🕎 Stiftshütte
         </h2>
 
-        <div style={{ margin: '20px 0', fontSize: '13px', color: '#C9A84C' }}>
-          <p style={{ margin: '8px 0' }}>WASD / Pfeile - Bewegung</p>
-          <p style={{ margin: '8px 0' }}>Maus + Linksklick - Drehen</p>
-          <p style={{ margin: '8px 0' }}>VR: Controller-Sticks</p>
-        </div>
+        {/* SPEC-marc-voice2 B: gerätespezifisch (Touch/Desktop/gar nicht in XR) */}
+        <ControlHints isTouchDevice={isTouchDevice} />
 
         <div style={{ margin: '20px 0', textAlign: 'left' }}>
           <label style={{ display: 'block', margin: '8px 0', fontSize: '12px' }}>

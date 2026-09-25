@@ -102,11 +102,14 @@ function makeRoofLayerGeo(w: number, t: number, len: number, phase: number): THR
   return geo;
 }
 
-// Herabhang (E1/E2): hangelt von der Dachkante bis ~0,25 m ueber Boden —
-// Sackung, 2-3 vertikale Falten, unten Auswaerts-Schwung + unschnittiger
-// Saum (+-2-3 cm Welle). v: 0 = Saum, 1 = Ansatz am Dach.
+// Herabhang (E1/E2 + SPEC-marc-voice2 C2): hangelt von der Dachkante bis
+// 0,06 m ueber dem Boden (fast Boden — Marc-Befund 3: echter Stoff faellt
+// NACH UNTEN, keine Platte) — Fall-Linie fast vertikal mit leichtem
+// Stoffbauch (0,03 statt 0,09 Auswaerts-Schwung), Sackung, 2-3 vertikale
+// Falten, unschnittiger Saum (+-2-3 cm Welle) bleiben.
+// v: 0 = Saum, 1 = Ansatz am Dach.
 function makeHangGeo(w: number, topY: number, phase: number): THREE.BufferGeometry {
-  const bottomY = 0.25;
+  const bottomY = 0.06;
   const h = topY - bottomY;
   const geo = new THREE.PlaneGeometry(w, h, 16, 10);
   const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -114,7 +117,8 @@ function makeHangGeo(w: number, topY: number, phase: number): THREE.BufferGeomet
     const x = pos.getX(i);
     const y = pos.getY(i);
     const v = y / h + 0.5;
-    let z = (1 - v) * (1 - v) * 0.09;
+    // C2: fast vertikaler Fall, leichter Stoffbauch (0,03)
+    let z = (1 - v) * (1 - v) * 0.03;
     z += Math.sin(x * 2.6 + phase) * 0.035 * (1 - v * 0.4);
     z += Math.sin(x * 5.3 + phase * 1.7) * 0.018 * (0.3 + v);
     pos.setZ(i, z);
@@ -209,8 +213,11 @@ const tableGoldGeo: THREE.BufferGeometry = (() => {
   }
   for (const pz of [-TABLE_D / 2 + 0.06, TABLE_D / 2 - 0.06]) {
     parts.push({
-      // B3: je Seite ~0,4 m ÜBERSTEHEND sichtbar (Ex 25,27-28-Regel)
-      geo: new THREE.CylinderGeometry(0.022, 0.022, TABLE_W + 0.8, 8),
+      // SPEC-marc-voice2 D2 (Ex 25,26-28): Tragstangen-Laenge NICHT
+      // ueberliefert (Ex nennt nur Material/Akazien) — traditionelle
+      // Tragbarkeit: ~1,0 m Überstand je Seite (2 Träger, ausbalanciert),
+      // durch die Eckenringe laufend (Ring-Positionen unverändert)
+      geo: new THREE.CylinderGeometry(0.022, 0.022, TABLE_W + 2.0, 8),
       p: [0, TABLE_H - 0.12, pz],
       r: [0, 0, Math.PI / 2],
     });
@@ -239,16 +246,25 @@ const incenseGoldGeo: THREE.BufferGeometry = (() => {
     }
   }
   for (const sx of [-1, 1]) {
-    parts.push({ geo: incenseRingGeo, p: [sx * (s / 2 + 0.02), 0.3, 0], r: [Math.PI / 2, 0, 0] });
+    // SPEC-marc-voice2 D2: Ring-Ausrichtung an den horizontalen Stangen
+    // (Loch-Achse x); Positionen x/Höhe 0,3 unverändert
+    parts.push({ geo: incenseRingGeo, p: [sx * (s / 2 + 0.02), 0.3, sx * (s / 2 + 0.015)], r: [0, Math.PI / 2, 0] });
   }
   return mergeParts(parts);
 })();
 
+// SPEC-marc-voice2 D2 (Ex 30,4-5): Raeucheraltar-Stangen — Laenge NICHT
+// ueberliefert (Ex nennt nur Material/Akazien-Gold), traditionelle
+// Tragbarkeit: ~1,0 m Überstand je Seite. ABGEWANDELT gegenüber der
+// Vorversion: die Stangen waren vertikal geführt (marc_feedback3-Report)
+// — "Überstand je Seite" verlangt horizontale Stangen (2 Träger);
+// vertikal verlängert würden sie in den Boden clippen. Ringe je 1 pro
+// Stange an den Schmalseiten (Höhe 0,3 unverändert).
 const incenseStavesGeo: THREE.BufferGeometry = (() => {
   const s = INCENSE_SIZE;
   return mergeParts([
-    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 0.3, 8), p: [-(s / 2 + 0.02), 0.3, 0] },
-    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 0.3, 8), p: [s / 2 + 0.02, 0.3, 0] },
+    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 2.0, 8), p: [0, 0.3, -(s / 2 + 0.015)], r: [0, 0, Math.PI / 2] },
+    { geo: new THREE.CylinderGeometry(0.02, 0.02, s + 2.0, 8), p: [0, 0.3, s / 2 + 0.015], r: [0, 0, Math.PI / 2] },
   ]);
 })();
 
@@ -361,6 +377,9 @@ export function SideBeamWall({ x, zStart, zEnd }: SideBeamWallProps) {
 // (Ex 26,9.12-13). E2: KEINE Abspannseile/Pflöcke an der Stiftshütte (nicht
 // biblisch — ein Zeltgestell, keine gespannte Plane); die Vorhofs-Pflöcke
 // (Ex 27,19) bleiben in TabernacleCourtyard.
+// SPEC-marc-voice2 C1: Dach-Lagen-Breiten reduziert (4.42/4.52/4.62/4.72,
+// max 0,22 m Überstand je Seite — liest sich als Kante, nicht als Platte);
+// Back-Überstände + Stapelung (y) UNVERÄNDERT.
 interface RoofLayer {
   w: number;
   t: number;
@@ -371,18 +390,28 @@ interface RoofLayer {
 }
 const ROOF_FRONT_OVERHANG = CUBIT;
 const ROOF_LAYERS: RoofLayer[] = [
-  { w: 4.4, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
-  { w: 5.35, t: 0.05, back: 45.6, y: 4.59, mat: GOAT_HAIR, inner: false },
-  { w: 5.8, t: 0.05, back: 45.9, y: 4.7, mat: RAM_SKIN, inner: false },
-  { w: 6.25, t: 0.06, back: 46.2, y: 4.83, mat: TACHASH, inner: false },
+  { w: 4.42, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
+  { w: 4.52, t: 0.05, back: 45.6, y: 4.59, mat: GOAT_HAIR, inner: false },
+  { w: 4.62, t: 0.05, back: 45.9, y: 4.7, mat: RAM_SKIN, inner: false },
+  { w: 4.72, t: 0.06, back: 46.2, y: 4.83, mat: TACHASH, inner: false },
 ];
 // E4: Falten-Bake je Dachlage (Phase pro Lage versetzt)
 const roofLayerGeos = ROOF_LAYERS.map((l, i) =>
   makeRoofLayerGeo(l.w, l.t, l.back - (TENT_Z_START - ROOF_FRONT_OVERHANG - i * 0.12), i * 2.1)
 );
-// E1/E2: deformierte Herabhang-Planen der Aussen-Lagen (Ende ~0,25 m über Boden)
+// E1/E2 + C2: deformierte Herabhang-Planen der Aussen-Lagen (Ende 0,06 m
+// über dem Boden)
 const roofHangGeos = ROOF_LAYERS.map((l, i) =>
   l.inner ? null : makeHangGeo(l.w, l.y - l.t / 2, i * 2.1)
+);
+// SPEC-marc-voice2 C3: seitliche Herabhang-Bahnen je Aussen-Lage (b/c/d) —
+// der Stoff fällt an der Zeltkante NACH UNTEN: je Seite 1 Bahn an
+// x = ±(Breite/2) rotiert, vom jeweiligen l.y bis 0,06, Material = l.mat
+// (Singleton) → 3 Lagen × 2 Seiten = 6 Meshes (Budget < 250 weiter erfüllt).
+// Bahn erst ab der Zeltfront (TENT_Z_START): der 1-ellen Frontüberhang bleibt
+// offen (Eingangsschirm Ex 26,36-37 steht dort — keine Stoffwand vorm Tor).
+const roofSideHangGeos = ROOF_LAYERS.map((l, i) =>
+  l.inner ? null : makeHangGeo(l.back - TENT_Z_START, l.y - l.t / 2, i * 2.1 + 1.05)
 );
 
 function RoofLayers() {
@@ -394,19 +423,45 @@ function RoofLayers() {
         const front = TENT_Z_START - ROOF_FRONT_OVERHANG - i * 0.12;
         const zCenter = (front + l.back) / 2;
         const hangGeo = roofHangGeos[i];
+        const sideGeo = roofSideHangGeos[i];
+        // C2/C4: Herabhang-Zentren bei neuem Boden-Ende 0,06 m
+        const hangCenterY = (l.y - l.t / 2 + 0.06) / 2;
+        const sideZCenter = (TENT_Z_START + l.back) / 2;
         return (
           <group key={`roof-${i}`}>
             {/* Dachschicht (grosse Silhouette, Falten-Bake E4) */}
             <mesh geometry={roofLayerGeos[i]} position={[0, l.y, zCenter]} material={l.mat} castShadow={i >= 2} />
             {/* Hinten hängt der Vorhang herunter (halbe Decke, Ex 26,9.12-13)
                 — NUR die Aussen-Schichten b/c/d; Schicht a ist Innendecke (A3).
-                E1/E2: Stoff-Deformation + Ende ~0,25 m über Boden */}
+                C2/C4: Stoff-Deformation, Ende 0,06 m über dem Boden
+                (Front-Bahnen existieren bewusst nicht — dort steht der
+                Eingangsschirm, Ex 26,36-37, vor dem 1-ellen Dachüberhang) */}
             {hangGeo && (
               <mesh
                 geometry={hangGeo}
-                position={[0, (l.y - l.t / 2 + 0.25) / 2, l.back - 0.02]}
+                position={[0, hangCenterY, l.back - 0.02]}
                 material={l.mat}
               />
+            )}
+
+            {/* C3: seitliche Herabhang-Bahnen je Aussen-Lage (b/c/d), je
+                Seite 1 Bahn — rotiert an x = ±(Breite/2), Stoffbauch zeigt
+                je Seite nach AUSSEN; Material = l.mat (Singleton) */}
+            {sideGeo && (
+              <>
+                <mesh
+                  geometry={sideGeo}
+                  position={[-l.w / 2, hangCenterY, sideZCenter]}
+                  rotation={[0, Math.PI / 2, 0]}
+                  material={l.mat}
+                />
+                <mesh
+                  geometry={sideGeo}
+                  position={[l.w / 2, hangCenterY, sideZCenter]}
+                  rotation={[0, -Math.PI / 2, 0]}
+                  material={l.mat}
+                />
+              </>
             )}
 
             {/* Unterseite der Byssus-Schicht (Innenansicht): 1 texturierte Plane */}

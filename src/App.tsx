@@ -346,7 +346,7 @@ export default function App() {
       {isTouchDevice && <Joystick />}
 
       {/* Pause menu - DOM overlay outside the Canvas (works anywhere in the world) */}
-      <GameUI />
+      <GameUI isTouchDevice={isTouchDevice} />
 
       {/* Instructions - adaptive per device, hidden while an XR session is active */}
       <div style={{

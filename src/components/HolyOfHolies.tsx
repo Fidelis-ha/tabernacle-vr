@@ -78,9 +78,16 @@ const ARK_RING_POSITIONS: Vec3[] = [
   [ARK_LENGTH / 2 - 0.08, ARK_FOOT_H + 0.12, -ARK_WIDTH / 2 - 0.035],
 ];
 
-// B1: Tragstangen je Seite ~0,4 m ÜBERSTEHEND sichtbar (durch die Ringe
-// gesteckt, Ex 25,27-28) — Ringe-Positionen unverändert (Ex 25,12)
-const arkStaveGeo = new THREE.CylinderGeometry(0.03, 0.03, ARK_LENGTH + 0.8, 8);
+// SPEC-marc-voice2 D1 — 1 Kön 8,8 + Talmud Joma 72a: die Stangen waren LANG,
+// ihre Enden waren vom HEILIGEN aus sichtbar (sie wölbten den Parochet vor).
+// Eine Länge ist NICHT überliefert (Ex 25,13 nennt nur Material) —
+// ausbalanciert: beidseitig gleicher Überstand. ABGEWANDELT (D3-Check):
+// geplant war 1,8 m Überstand je Seite (ARK_LENGTH + 3,6); die Stangen laufen
+// im Modell entlang der Lade-Länge (x = Nord-Süd) PARALLEL zum Parochet —
+// bei 1,8 m ragen die Enden (x = ±2,36) durch die Seitenwände (Innenfläche
+// ±2,19). Deshalb 1,4 m je Seite (Enden x = ±1,96, frei im Raum).
+// Ringe (Ex 25,12: untere Ecken) UNVERÄNDERT — Stange gleitet durch.
+const arkStaveGeo = new THREE.CylinderGeometry(0.03, 0.03, ARK_LENGTH + 2.8, 8);
 // P2 Lade-Relief: duenne Gold-Reliefleisten (Muster wie die Fugen-Naht,
 // aber hervortretend — Ladung/Last ablesbar)
 const arkReliefStripGeo = new THREE.BoxGeometry(ARK_LENGTH + 0.014, 0.016, ARK_WIDTH + 0.014);

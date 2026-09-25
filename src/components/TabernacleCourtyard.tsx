@@ -110,9 +110,13 @@ const altarBronzeGeo: THREE.BufferGeometry = (() => {
   return mergeParts(parts);
 })();
 
+// SPEC-marc-voice2 D2 (Ex 27,6-7): Brandopferaltar-Stangen — Laenge NICHT
+// ueberliefert (Ex nennt nur Material/Akazien-Bronze), traditionelle
+// Tragbarkeit: ~1,0 m Überstand je Seite (2 Träger, ausbalanciert);
+// Ring-Positionen (Ex 27,4, untere Ecken) unverändert
 const altarPolesGeo: THREE.BufferGeometry = mergeParts([
-  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 1.2, 8), p: [0, 0.25, -ALTAR_SIZE / 2 + 0.05], r: [0, 0, Math.PI / 2] },
-  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 1.2, 8), p: [0, 0.25, ALTAR_SIZE / 2 - 0.05], r: [0, 0, Math.PI / 2] },
+  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 2.0, 8), p: [0, 0.25, -ALTAR_SIZE / 2 + 0.05], r: [0, 0, Math.PI / 2] },
+  { geo: new THREE.CylinderGeometry(0.05, 0.05, ALTAR_SIZE + 2.0, 8), p: [0, 0.25, ALTAR_SIZE / 2 - 0.05], r: [0, 0, Math.PI / 2] },
 ]);
 
 // --- Bronzenes Waschbecken (Ex 30,18) ---
