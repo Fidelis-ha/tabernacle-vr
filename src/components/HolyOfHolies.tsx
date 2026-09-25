@@ -78,24 +78,56 @@ const ARK_RING_POSITIONS: Vec3[] = [
   [ARK_LENGTH / 2 - 0.08, ARK_FOOT_H + 0.12, -ARK_WIDTH / 2 - 0.035],
 ];
 
-const arkStaveGeo = new THREE.CylinderGeometry(0.03, 0.03, ARK_LENGTH + 0.7, 8);
+// B1: Tragstangen je Seite ~0,4 m ÜBERSTEHEND sichtbar (durch die Ringe
+// gesteckt, Ex 25,27-28) — Ringe-Positionen unverändert (Ex 25,12)
+const arkStaveGeo = new THREE.CylinderGeometry(0.03, 0.03, ARK_LENGTH + 0.8, 8);
 // P2 Lade-Relief: duenne Gold-Reliefleisten (Muster wie die Fugen-Naht,
 // aber hervortretend — Ladung/Last ablesbar)
 const arkReliefStripGeo = new THREE.BoxGeometry(ARK_LENGTH + 0.014, 0.016, ARK_WIDTH + 0.014);
 // P2 Cherubim-Fluegel: Kerb-Streifen als Feder-Andeutung
 const arkWingNotchGeo = new THREE.BoxGeometry(0.016, 0.01, 0.26);
 
-// Cherubim-Bauteile (Ex 25,18-20), lokal; unverändert aus der bisherigen
-// Cherub-Komponente uebernommen
+// Cherubim-Bauteile (Ex 25,18-20), lokal.
+// A3: Koerper tailliert (LatheGeometry statt Zylinder — Huefte breit,
+// Taille schmal, Schulteransatz), 2 Fuss-Setzpunkte bleiben.
 const CHERUB_INNER_WING = 0.56;
 const CHERUB_OUTER_WING = 0.55;
 const CHERUB_INNER_ANGLE = THREE.MathUtils.degToRad(60);
 const CHERUB_OUTER_ANGLE = THREE.MathUtils.degToRad(50);
 const cherubFootGeo = new THREE.SphereGeometry(0.022, 8, 8);
-const cherubBodyGeo = new THREE.CylinderGeometry(0.07, 0.11, 0.36, 10);
+const cherubBodyGeo = new THREE.LatheGeometry(
+  [
+    new THREE.Vector2(0.0, 0.0),
+    new THREE.Vector2(0.1, 0.004),
+    new THREE.Vector2(0.11, 0.06),
+    new THREE.Vector2(0.086, 0.14),
+    new THREE.Vector2(0.066, 0.22),
+    new THREE.Vector2(0.07, 0.3),
+    new THREE.Vector2(0.082, 0.355),
+    new THREE.Vector2(0.06, 0.36),
+  ],
+  12
+);
 const cherubHeadGeo = new THREE.SphereGeometry(0.06, 10, 10);
-const cherubInnerWingGeo = new THREE.BoxGeometry(CHERUB_INNER_WING, 0.014, 0.3);
-const cherubOuterWingGeo = new THREE.BoxGeometry(CHERUB_OUTER_WING, 0.014, 0.3);
+// A2: Gesicht — 2 kleine dunkle Augenkugeln + dezenter Mundwulst
+// (in arkSeamGeo, dunkles Material — liest sich als Vertiefung)
+const cherubEyeGeo = new THREE.SphereGeometry(0.014, 8, 8);
+const cherubMuzzleGeo = new THREE.SphereGeometry(0.021, 10, 8);
+// A1: GEB OGENE Flügel (ExtrudeGeometry mit Bezier-Profil: Wurzel dick,
+// Spitze duenn, sanfter Bogen nach oben) statt flacher Boxen; die Geometrie
+// startet am FLUEGELWURZEL (x=0), laengs +x bis zur Spitze.
+function makeWingGeo(len: number, rootThick: number, depth: number, tipLift: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -rootThick / 2);
+  shape.quadraticCurveTo(len * 0.55, -rootThick * 0.08, len, tipLift);
+  shape.quadraticCurveTo(len * 0.5, rootThick * 1.15 + tipLift, 0, rootThick / 2);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 10 });
+  geo.translate(0, 0, -depth / 2);
+  return geo;
+}
+const cherubInnerWingGeo = makeWingGeo(CHERUB_INNER_WING, 0.05, 0.3, 0.07);
+const cherubOuterWingGeo = makeWingGeo(CHERUB_OUTER_WING, 0.05, 0.3, 0.06);
 const cherubMiddleGeo = new THREE.BoxGeometry(0.14, 0.013, 0.28);
 const cherubFeatherInnerGeo = new THREE.BoxGeometry(CHERUB_INNER_WING * 0.85, 0.012, 0.2);
 const cherubFeatherOuterGeo = new THREE.BoxGeometry(CHERUB_OUTER_WING * 0.85, 0.012, 0.2);
@@ -126,33 +158,60 @@ function wingNotches(
 }
 
 function cherubParts(facing: 1 | -1, cx: number, baseY: number): MergePart[] {
-  // Innerer Flügel: Wurzel an der inneren Körperkante, steil zur Mitte
-  // (Spitzen übereinander in der Mitte, Ex 25,20); äusserer Flügel zur Wand
-  const innerCenterX = facing * (0.06 + (CHERUB_INNER_WING / 2) * Math.cos(CHERUB_INNER_ANGLE));
-  const innerCenterY = 0.32 + (CHERUB_INNER_WING / 2) * Math.sin(CHERUB_INNER_ANGLE);
-  const outerCenterX = -facing * (0.08 + (CHERUB_OUTER_WING / 2) * Math.cos(CHERUB_OUTER_ANGLE));
-  const outerCenterY = 0.38 + (CHERUB_OUTER_WING / 2) * Math.sin(CHERUB_OUTER_ANGLE);
+  // Flügel ab dem WURZEL-Punkt am Korpus: innerer Flügel steil zur Mitte
+  // (Spitzen uebereinander ueber der Kapporet, Ex 25,20), äusserer zur Wand.
+  // Die gebogene Profil-Geometrie traegt den Aufschwung, die Rotation nur
+  // noch die Grundrichtung.
+  const innerRoot: Vec3 = [facing * 0.06, 0.32, 0];
+  const outerRoot: Vec3 = [-facing * 0.08, 0.38, 0];
   const innerRotation = Math.PI / 2 - facing * (Math.PI / 2 - CHERUB_INNER_ANGLE);
   const outerRotation = Math.PI / 2 + facing * (Math.PI / 2 - CHERUB_OUTER_ANGLE);
+  const innerMid: Vec3 = [
+    innerRoot[0] + Math.cos(innerRotation) * CHERUB_INNER_WING * 0.5,
+    innerRoot[1] + Math.sin(innerRotation) * CHERUB_INNER_WING * 0.5,
+    0,
+  ];
+  const outerMid: Vec3 = [
+    outerRoot[0] + Math.cos(outerRotation) * CHERUB_OUTER_WING * 0.5,
+    outerRoot[1] + Math.sin(outerRotation) * CHERUB_OUTER_WING * 0.5,
+    0,
+  ];
   const off = (p: Vec3): Vec3 => [p[0] + cx, p[1] + baseY, p[2]];
 
   const parts: MergePart[] = [
     { geo: cherubFootGeo, p: off([-0.05, 0.012, 0]) },
     { geo: cherubFootGeo, p: off([0.05, 0.012, 0]) },
-    { geo: cherubBodyGeo, p: off([facing * 0.015, 0.18, 0]), r: [0, 0, -facing * 0.09] },
+    { geo: cherubBodyGeo, p: off([facing * 0.015, 0, 0]), r: [0, 0, -facing * 0.09] },
     { geo: cherubHeadGeo, p: off([facing * 0.03, 0.405, 0]), r: [0, 0, -facing * 0.35] },
-    { geo: cherubInnerWingGeo, p: off([innerCenterX, innerCenterY, 0]), r: [0, 0, innerRotation] },
-    { geo: cherubOuterWingGeo, p: off([outerCenterX, outerCenterY, 0]), r: [0, 0, outerRotation] },
-    { geo: cherubFeatherInnerGeo, p: off([innerCenterX, innerCenterY - 0.035, 0.02]), r: [0.06, 0, innerRotation + facing * 0.14] },
-    { geo: cherubFeatherOuterGeo, p: off([outerCenterX, outerCenterY - 0.035, 0.02]), r: [-0.06, 0, outerRotation - facing * 0.12] },
-    ...wingNotches(innerCenterX, innerCenterY, innerRotation, CHERUB_INNER_WING, cx, baseY),
-    ...wingNotches(outerCenterX, outerCenterY, outerRotation, CHERUB_OUTER_WING, cx, baseY),
+    { geo: cherubInnerWingGeo, p: off(innerRoot), r: [0, 0, innerRotation] },
+    { geo: cherubOuterWingGeo, p: off(outerRoot), r: [0, 0, outerRotation] },
+    { geo: cherubFeatherInnerGeo, p: off([innerMid[0], innerMid[1] - 0.024, 0.02]), r: [0.06, 0, innerRotation + facing * 0.14] },
+    { geo: cherubFeatherOuterGeo, p: off([outerMid[0], outerMid[1] - 0.024, 0.02]), r: [-0.06, 0, outerRotation - facing * 0.12] },
+    ...wingNotches(innerMid[0], innerMid[1], innerRotation, CHERUB_INNER_WING, cx, baseY),
+    ...wingNotches(outerMid[0], outerMid[1], outerRotation, CHERUB_OUTER_WING, cx, baseY),
   ];
   // Mittelstück über x=0 verbindet die Flügel-Spitzen (nur 1x, Ex 25,20)
   if (facing === 1) {
-    parts.push({ geo: cherubMiddleGeo, p: off([0, innerCenterY, 0]), r: [0, 0, CHERUB_INNER_ANGLE] });
+    parts.push({ geo: cherubMiddleGeo, p: off([0, innerMid[1], 0]), r: [0, 0, CHERUB_INNER_ANGLE] });
   }
   return parts;
+}
+
+// A2: Gesichtsteile (dunkles ARK_SEAM-Material) — Kopf blickt zum Gegenueber
+// (facing 1 → +x, facing -1 → -x) und leicht nach unten geneigt (Neigung
+// 0.35 rad um z, identisch zur Kopf-Rotation): Ex 25,20 „Gesichter einander
+// zugewandt, Blick auf die Deckplatte".
+function cherubFaceParts(facing: 1 | -1, cx: number, baseY: number): MergePart[] {
+  const hx = facing * 0.03;
+  const hy = 0.405;
+  const fx = facing * Math.cos(0.35);
+  const fy = -Math.sin(0.35);
+  const off = (p: Vec3): Vec3 => [p[0] + cx, p[1] + baseY, p[2]];
+  return [
+    { geo: cherubEyeGeo, p: off([hx + fx * 0.057, hy + fy * 0.057 + 0.012, 0.021]) },
+    { geo: cherubEyeGeo, p: off([hx + fx * 0.057, hy + fy * 0.057 + 0.012, -0.021]) },
+    { geo: cherubMuzzleGeo, p: off([hx + fx * 0.054, hy + fy * 0.054 - 0.02, 0]), s: [0.7, 0.55, 1.1] },
+  ];
 }
 
 const arkGoldGeo: THREE.BufferGeometry = (() => {
@@ -201,6 +260,10 @@ const arkSeamGeo: THREE.BufferGeometry = mergeParts([
   ...ARK_RING_POSITIONS.map(
     (pos, i) => ({ geo: arkRingSocketGeo, p: pos, r: [0, Math.PI / 2, i * Math.PI] } as MergePart)
   ),
+  // A2: Cherubim-Gesichter (dunkle Augen + Mundwulst) — separat vom GOLD-Merge,
+  // aber weiterhin nur 3 Draw Calls fuer die ganze Lade
+  ...cherubFaceParts(1, -0.32, ARK_KAPORET_Y + 0.045),
+  ...cherubFaceParts(-1, 0.32, ARK_KAPORET_Y + 0.045),
 ]);
 
 export function HolyOfHolies() {

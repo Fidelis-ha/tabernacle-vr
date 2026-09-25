@@ -25,5 +25,9 @@ export function mergeParts(parts: MergePart[]): THREE.BufferGeometry {
     );
     return g;
   });
-  return mergeGeometries(geos)!;
+  // ExtrudeGeometry & Co. sind nicht-indexed — alle Teile auf EINEN
+  // Index-Modus normalisieren, sonst liefert mergeGeometries null
+  const anyNonIndexed = geos.some((g) => g.index === null);
+  const normalized = anyNonIndexed ? geos.map((g) => (g.index ? g.toNonIndexed() : g)) : geos;
+  return mergeGeometries(normalized)!;
 }

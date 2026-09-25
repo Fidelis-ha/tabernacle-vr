@@ -367,7 +367,8 @@ export default function App() {
 }
 
 // Collision blockers (AABBs): tabernacle walls (only entrance z=31.5 and veil
-// z=40.5 passable), bronze altar (2.25 x 2.25 at z=27), bronze basin (z=29.5)
+// z=40.5 passable), bronze altar (2.25 x 2.25 at z=24), bronze basin (z=28)
+// — SPEC-marc-feedback3 D1/D2
 interface AABB {
   minX: number;
   maxX: number;
@@ -390,10 +391,10 @@ const COLLIDERS: AABB[] = [
   { minX: 1.95, maxX: 2.55, minZ: 31.3, maxZ: 45.3 },
   // Tabernacle west back wall (z = 45)
   { minX: -2.55, maxX: 2.55, minZ: 44.7, maxZ: 45.3 },
-  // Bronze altar: 5 x 5 cubits (2.25m) at z = 27
-  { minX: -1.125, maxX: 1.125, minZ: 25.875, maxZ: 28.125 },
-  // Bronze basin: radius ~0.8 at z = 29.5
-  { minX: -0.9, maxX: 0.9, minZ: 28.6, maxZ: 30.4 },
+  // Bronze altar: 5 x 5 cubits (2.25m) at z = 24 (SPEC-marc-feedback3 D2)
+  { minX: -1.125, maxX: 1.125, minZ: 22.875, maxZ: 25.125 },
+  // Bronze basin: radius ~0.8 at z = 28 (SPEC-marc-feedback3 D2)
+  { minX: -0.9, maxX: 0.9, minZ: 27.1, maxZ: 28.9 },
   // Ostwand (z = 0) — zwei Segmente, Tor-Durchlass x ∈ [-4,5; 4,5] bleibt frei
   { minX: -COURTYARD_HALF_W, maxX: -GATE_WIDTH / 2, minZ: -WALL_T, maxZ: WALL_T },
   { minX: GATE_WIDTH / 2, maxX: COURTYARD_HALF_W, minZ: -WALL_T, maxZ: WALL_T },

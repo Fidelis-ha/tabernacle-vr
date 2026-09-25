@@ -22,12 +22,12 @@ import {
   TACHASH,
   BYSSUS_CHERUBIM,
   SCREEN_MAT,
-  ROPE,
   BREAD,
   FLAME,
 } from '../utils/materials';
-import { Instanced, ropeTransform, type InstanceTransform, type Vec3 } from '../utils/instancing';
+import { Instanced, type InstanceTransform, type Vec3 } from '../utils/instancing';
 import { mergeParts, type MergePart } from '../utils/merge';
+import { applyFabricWind, fabricUTime } from '../utils/wind';
 
 // Heiligen nach Ex 26,15-37 / SPEC:
 // Stiftshütte: 30 Ellen lang (13,5m, z = 31,5 ... 45), 10 Ellen breit (4,5m), 10 Ellen hoch (4,5m)
@@ -52,8 +52,6 @@ const socketGeo = new THREE.BoxGeometry(0.28, 0.2, 0.36);
 const barGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 8);            // Länge via scale
 const ringGeo = new THREE.TorusGeometry(0.052, 0.012, 6, 12);
 const loavesGeo = new THREE.CylinderGeometry(0.085, 0.08, 0.038, 14);      // flach-runde Brote (B3)
-const roofPegGeo = new THREE.CylinderGeometry(0.022, 0.014, 0.25, 6);
-const roofRopeGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5);
 
 // Identische Inline-Geometrien als Modul-Konstanten (Budget-Regel 8)
 const tableLegGeo = new THREE.CylinderGeometry(0.026, 0.032, 1.5 * CUBIT - 0.1, 8); // Bein (profiert, B3)
@@ -72,6 +70,63 @@ const footStep3Geo = new THREE.CylinderGeometry(0.075, 0.1, 0.045, 14);
 const calotteGeo = new THREE.ConeGeometry(0.015, 0.024, 6);                 // Blütenkalotte
 const calyxGeo = new THREE.ConeGeometry(0.026, 0.05, 8);                    // Kelchblüte (invers)
 const flamePlaneGeo = new THREE.PlaneGeometry(0.032, 0.064);                // Flamme (2 Ebenen)
+
+// === E3 (SPEC-marc-feedback3): Wind auf den Decken-Materialien (nur HIGH-Tier,
+// siehe utils/wind.ts). Dezente Amplituden — schwere Stoffe, keine Zeltläppchen.
+applyFabricWind(GOAT_HAIR, 0.6, 0.9, 0, 0.035);
+applyFabricWind(RAM_SKIN, 0.6, 0.9, 1.4, 0.032);
+applyFabricWind(TACHASH, 0.6, 0.9, 2.8, 0.028);
+
+// === E1/E4 (SPEC-marc-feedback3): Decken wie STOFF —
+// statische Deformation als "Falten-Bake" statt glatter Planes/Boxen.
+
+// Dach-Lagen (E4): Stapelung aus marc-feedback2 bleibt, Top-Fläche bekommt
+// sanfte Falten (2 ueberlagerte Wellen, amplitude ~2 cm = schweres Tuch)
+function makeRoofLayerGeo(w: number, t: number, len: number, phase: number): THREE.BufferGeometry {
+  const geo = new THREE.BoxGeometry(w, t, len, 14, 1, 30);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    if (pos.getY(i) > 0) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      pos.setY(
+        i,
+        t / 2 +
+          Math.sin(x * 1.35 + phase) * Math.cos(z * 0.5 + phase * 0.6) * 0.018 +
+          Math.sin(x * 3.2 + z * 0.8 + phase * 1.4) * 0.007
+      );
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Herabhang (E1/E2): hangelt von der Dachkante bis ~0,25 m ueber Boden —
+// Sackung, 2-3 vertikale Falten, unten Auswaerts-Schwung + unschnittiger
+// Saum (+-2-3 cm Welle). v: 0 = Saum, 1 = Ansatz am Dach.
+function makeHangGeo(w: number, topY: number, phase: number): THREE.BufferGeometry {
+  const bottomY = 0.25;
+  const h = topY - bottomY;
+  const geo = new THREE.PlaneGeometry(w, h, 16, 10);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const v = y / h + 0.5;
+    let z = (1 - v) * (1 - v) * 0.09;
+    z += Math.sin(x * 2.6 + phase) * 0.035 * (1 - v * 0.4);
+    z += Math.sin(x * 5.3 + phase * 1.7) * 0.018 * (0.3 + v);
+    pos.setZ(i, z);
+    if (v < 0.2) {
+      const hem = Math.sin(x * 3.9 + phase * 2.3) * 0.025 + Math.sin(x * 9.1 + phase) * 0.012;
+      pos.setY(i, y + hem * (1 - v / 0.2));
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
 
 // === P1 Draw-Call-Merge: statische GOLD-Teile je Geraet in EINE Geometrie
 // (Vorbild Animals.tsx bodyGeo); animierte Ebenen (Flammen) bleiben einzeln ===
@@ -154,7 +209,8 @@ const tableGoldGeo: THREE.BufferGeometry = (() => {
   }
   for (const pz of [-TABLE_D / 2 + 0.06, TABLE_D / 2 - 0.06]) {
     parts.push({
-      geo: new THREE.CylinderGeometry(0.022, 0.022, TABLE_W + 0.5, 8),
+      // B3: je Seite ~0,4 m ÜBERSTEHEND sichtbar (Ex 25,27-28-Regel)
+      geo: new THREE.CylinderGeometry(0.022, 0.022, TABLE_W + 0.8, 8),
       p: [0, TABLE_H - 0.12, pz],
       r: [0, 0, Math.PI / 2],
     });
@@ -197,6 +253,12 @@ const incenseStavesGeo: THREE.BufferGeometry = (() => {
 })();
 
 export function HolyPlace() {
+  // E3: geteiltes uTime-Uniform für die Decken-Wind-Animation (nur HIGH-Tier
+  // kompiliert den Wind-Code; low-Tier bleibt statisch)
+  useFrame((state) => {
+    fabricUTime.value = state.clock.elapsedTime;
+  });
+
   return (
     <group>
       {/* === GOLDÜBERZOGENE AKAZIENBALKEN - Süd & Nord (Heiligen) === */}
@@ -209,11 +271,14 @@ export function HolyPlace() {
       {/* === EINGANGSSCHIRM - 5 Säulen, bunter Vorhang (Ex 26,36-37) === */}
       <EntranceScreen />
 
-      {/* === MENORA (Ex 25,31-40) - Südseite, ~1 Elle hoch === */}
-      <Menora position={[MENORA_X, 0, FURNITURE_Z]} />
+      {/* === MENORA (Ex 25,31-40) - Südseite, ~1 Elle hoch ===
+          C: um 90° gedreht (rotation.y = PI/2); Position x=-1,1/z=36 bleibt.
+          Flammen-Ebenen hängen an der Gruppe und drehen mit. */}
+      <Menora position={[MENORA_X, 0, FURNITURE_Z]} rotationY={Math.PI / 2} />
 
-      {/* === SCHAUBROTTISCH (Ex 25,23-30) - Nordseite, 1,5 Ellen hoch === */}
-      <ShowbreadTable position={[TABLE_X, 0, FURNITURE_Z]} />
+      {/* === SCHAUBROTTISCH (Ex 25,23-30) - Nordseite, 1,5 Ellen hoch ===
+          C: ebenfalls um 90° gedreht (Brote-Reihe + Stangen neu ausgerichtet). */}
+      <ShowbreadTable position={[TABLE_X, 0, FURNITURE_Z]} rotationY={Math.PI / 2} />
 
       {/* === RÄUCHERALTAR (Ex 30,1-10) - direkt vor dem Vorhang === */}
       <IncenseAltar position={[0, 0, INCENSE_ALTAR_Z]} />
@@ -288,88 +353,70 @@ export function SideBeamWall({ x, zStart, zEnd }: SideBeamWallProps) {
   );
 }
 
+// 4 Schichten von innen nach aussen (Ex 26,1-14) — Stapelung aus
+// marc-feedback2 UNVERÄNDERT (Breiten/Dicken/Rückkanten/Höhen):
+//   a) 10 Byssus-Vorhänge (Innendecke, von aussen unsichtbar — A3)
+//   b) 11 Ziegenhaar-Vorhänge   c) rot gefärbte Widderfelle   d) Tachasch-Felle
+// 1 Ellen Überhang vorn (Osten, z = 31,5), hinten hängt die halbe Decke
+// (Ex 26,9.12-13). E2: KEINE Abspannseile/Pflöcke an der Stiftshütte (nicht
+// biblisch — ein Zeltgestell, keine gespannte Plane); die Vorhofs-Pflöcke
+// (Ex 27,19) bleiben in TabernacleCourtyard.
+interface RoofLayer {
+  w: number;
+  t: number;
+  back: number;
+  y: number;
+  mat: THREE.Material;
+  inner: boolean;
+}
+const ROOF_FRONT_OVERHANG = CUBIT;
+const ROOF_LAYERS: RoofLayer[] = [
+  { w: 4.4, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
+  { w: 5.35, t: 0.05, back: 45.6, y: 4.59, mat: GOAT_HAIR, inner: false },
+  { w: 5.8, t: 0.05, back: 45.9, y: 4.7, mat: RAM_SKIN, inner: false },
+  { w: 6.25, t: 0.06, back: 46.2, y: 4.83, mat: TACHASH, inner: false },
+];
+// E4: Falten-Bake je Dachlage (Phase pro Lage versetzt)
+const roofLayerGeos = ROOF_LAYERS.map((l, i) =>
+  makeRoofLayerGeo(l.w, l.t, l.back - (TENT_Z_START - ROOF_FRONT_OVERHANG - i * 0.12), i * 2.1)
+);
+// E1/E2: deformierte Herabhang-Planen der Aussen-Lagen (Ende ~0,25 m über Boden)
+const roofHangGeos = ROOF_LAYERS.map((l, i) =>
+  l.inner ? null : makeHangGeo(l.w, l.y - l.t / 2, i * 2.1)
+);
+
 function RoofLayers() {
-  // 4 Schichten von innen nach aussen (Ex 26,1-14):
-  // a) 10 Byssus-Vorhänge, blau/violett/scharlach mit Cherubim-Wirkerei
-  // b) 11 Ziegenhaar-Vorhänge
-  // c) rot gefärbte Widderfelle
-  // d) Tachasch-Felle (dunkel)
-  // 1 Ellen Überhang vorn (Osten, z = 31,5), hinten hängt die halbe Decke (Ex 26,9.12-13)
-  // Hängetau + Bronzepflöcke an der Aussenkante der Ziegenhaardecke (Ex 27,19), je 5 pro Seite
-  //
-  // SPEC-marc-feedback2 E: die 3 äußeren Lagen als SICHTBARE Stapel-Lagen —
-  // je Schicht breiter UND höher (Versatz), sodass von außen Kanten/Abstufungen
-  // als Bänder lesbar sind: Ziegenhaar (dunkelbraun-grau, Webstruktur) übersteht
-  // die Byssus-Schicht rundum (hinten halber Teppich, seitlich je 1 Elle,
-  // Ex 26,12-13), dann das rotbraune Widderfell-Band, oben die dunkle
-  // Leder-Lage (Tachasch). Material-Tints auf burlap/goatHair-Basis
-  // (materials.ts) — KEINE neuen Materialien nötig. Biblische Maße unverändert.
-  const frontOverhang = CUBIT;
-  // A3 (Ex 26,1-14): Schicht a (Byssus/Cherubim) ist die INNENDECKE — von
-  // aussen unsichtbar. Ihre Box liegt daher VOLL innerhalb der Goldbalken
-  // (w < TENT_WIDTH), der westliche "halbe Decke"-Hang entfaellt (innen gibt
-  // es nur Goldbretter + Cherubimdecke), und die Innen-Deckenplane bleibt
-  // hinter den Balken (w < Balken-Aussenkante 4,62).
-  const layers = [
-    { w: 4.4, t: 0.03, back: 45.3, y: 4.515, mat: BYSSUS_CHERUBIM, inner: true },
-    { w: 5.35, t: 0.05, back: 45.6, y: 4.59, mat: GOAT_HAIR, inner: false },
-    { w: 5.8, t: 0.05, back: 45.9, y: 4.7, mat: RAM_SKIN, inner: false },
-    { w: 6.25, t: 0.06, back: 46.2, y: 4.83, mat: TACHASH, inner: false },
-  ];
-  const goatHair = layers[1];
-  const ropeZs = Array.from({ length: 5 }, (_, i) => 32 + i * 3.25);
-
-  // Unterperspektive der Byssus-Schicht: EINE texturierte Plane
-  // (4-farbige Querstreifen + goldene Cherubim-Andeutungen)
-  const underRoof = layers[0];
-  const underFront = TENT_Z_START - frontOverhang;
-  const underLen = underRoof.back - underFront;
-  const underW = 4.46; // bleibt hinter den Balken-Aussenkanten (±2,31)
-
-  const roofRopes: InstanceTransform[] = [];
-  const roofPegs: InstanceTransform[] = [];
-  for (const side of [-1, 1]) {
-    for (const z of ropeZs) {
-      const edgeX = side * (goatHair.w / 2);
-      const pegX = side * (goatHair.w / 2 + 1.3);
-      roofRopes.push(ropeTransform([edgeX, goatHair.y - goatHair.t / 2, z], [pegX, 0.25, z]));
-      roofPegs.push({ position: [pegX, 0.125, z] });
-    }
-  }
-
   return (
     <group>
-      <Instanced geometry={roofPegGeo} material={BRONZE} transforms={roofPegs} />
-      <Instanced geometry={roofRopeGeo} material={ROPE} transforms={roofRopes} />
-
-      {layers.map((l, i) => {
+      {ROOF_LAYERS.map((l, i) => {
         // E: Front-Versatz gestaffelt (0,12 m je Lage) — die Überstände
         // lesen sich als sichtbare Kanten von der Seite/vorn
-        const front = TENT_Z_START - frontOverhang - i * 0.12;
-        const len = l.back - front;
+        const front = TENT_Z_START - ROOF_FRONT_OVERHANG - i * 0.12;
         const zCenter = (front + l.back) / 2;
+        const hangGeo = roofHangGeos[i];
         return (
           <group key={`roof-${i}`}>
-            {/* Dachschicht (grosse Silhouette) */}
-            <mesh position={[0, l.y, zCenter]} material={l.mat} castShadow={i >= 2}>
-              <boxGeometry args={[l.w, l.t, len]} />
-            </mesh>
+            {/* Dachschicht (grosse Silhouette, Falten-Bake E4) */}
+            <mesh geometry={roofLayerGeos[i]} position={[0, l.y, zCenter]} material={l.mat} castShadow={i >= 2} />
             {/* Hinten hängt der Vorhang herunter (halbe Decke, Ex 26,9.12-13)
-                — NUR die Aussen-Schichten b/c/d; Schicht a ist Innendecke (A3) */}
-            {!l.inner && (
-              <mesh position={[0, 3.35, l.back - 0.02]} material={l.mat}>
-                <planeGeometry args={[l.w, 2.3]} />
-              </mesh>
+                — NUR die Aussen-Schichten b/c/d; Schicht a ist Innendecke (A3).
+                E1/E2: Stoff-Deformation + Ende ~0,25 m über Boden */}
+            {hangGeo && (
+              <mesh
+                geometry={hangGeo}
+                position={[0, (l.y - l.t / 2 + 0.25) / 2, l.back - 0.02]}
+                material={l.mat}
+              />
             )}
 
             {/* Unterseite der Byssus-Schicht (Innenansicht): 1 texturierte Plane */}
             {i === 0 && (
               <mesh
-                position={[0, l.y - l.t / 2 - 0.001, underFront + underLen / 2]}
+                position={[0, l.y - l.t / 2 - 0.001, front + (l.back - front) / 2]}
                 rotation={[Math.PI / 2, 0, 0]}
                 material={l.mat}
               >
-                <planeGeometry args={[underW, underLen]} />
+                <planeGeometry args={[4.46, l.back - front]} />
               </mesh>
             )}
           </group>
@@ -419,10 +466,12 @@ const entranceCapGeo = new THREE.CylinderGeometry(0.07, 0.045, 0.1, 8);
 // (mandelförmiger Schwung der Menora-Arme, Ex 25,31-36) — in menoraGoldGeo
 // eingebacken (P1 Merge), hier nur noch die animierten Flammen-Ebenen.
 
-function Menora({ position }: { position: Vec3 }) {
+function Menora({ position, rotationY = 0 }: { position: Vec3; rotationY?: number }) {
   // 2. Mose 25,31-40 - ein Talent Gold, ~1 Elle (≈1m) hoch
   // 7 Arme (3 Paare + Mittelschaft), Mandelblüten-Knäufe, Öllämpchen mit Flammen
   // Flammen-Animation: y-Scale +-15%, Phasen versetzt (keine Allokation pro Frame)
+  // C: rotationY dreht Arme-Aufstellung + Flammen-Ebenen gemeinsam; das
+  // Flackerlicht sitzt mittig über dem Gerät (Position unverändert).
   const flameRefs = useRef<(THREE.Group | null)[]>([]);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -437,7 +486,7 @@ function Menora({ position }: { position: Vec3 }) {
   const lampXs = [0, ...MENORA_PAIRS.map((p) => p.lampX * -1), ...MENORA_PAIRS.map((p) => p.lampX)];
 
   return (
-    <group position={position}>
+    <group position={position} rotation={[0, rotationY, 0]}>
       {/* Gesamte GOLD-Struktur (Fuss, Schaft, Arme, Knaeufe, Laempchen,
           Geraete) als EINE gemergte Geometrie (P1 Draw-Call-Merge) */}
       <mesh position={[0, 0, 0]} geometry={menoraGoldGeo} material={GOLD} castShadow />
@@ -458,9 +507,10 @@ function Menora({ position }: { position: Vec3 }) {
   );
 }
 
-function ShowbreadTable({ position }: { position: Vec3 }) {
+function ShowbreadTable({ position, rotationY = 0 }: { position: Vec3; rotationY?: number }) {
   // 2. Mose 25,23-30 - 2 x 1 x 1,5 Ellen (0,9 x 0,45 x 0,675m), Akazien mit Gold überzogen
   // 12 Schaubrote: 2 Stapel à 6 (Ex 25,30 / 3. Mose 24,5-9) als InstancedMesh
+  // C: rotationY dreht Tisch, Brote-Reihe und Tragstangen gemeinsam.
   const loaves: InstanceTransform[] = [];
   for (const stackX of [-0.2, 0.2]) {
     for (let j = 0; j < 6; j++) {
@@ -472,7 +522,7 @@ function ShowbreadTable({ position }: { position: Vec3 }) {
   }
 
   return (
-    <group position={position}>
+    <group position={position} rotation={[0, rotationY, 0]}>
       {/* Platte + Doppelskranz + Beine + Ringfuesse + Eckenringe +
           Tragstangen + Geraete: EINE gemergte GOLD-Geometrie (P1 Merge) */}
       <mesh geometry={tableGoldGeo} material={GOLD} castShadow />

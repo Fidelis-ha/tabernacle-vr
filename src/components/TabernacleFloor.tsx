@@ -43,9 +43,11 @@ export const HOLY_OF_HOLIES_Z_START = 40.5;
 export const HOLY_OF_HOLIES_Z_END = 45;
 export const HOLY_OF_HOLIES_Z_CENTER = 42.75;      // Mitte des Würfels
 
-// Vorhof-Einrichtungen (Ex 40,6-7)
-export const ALTAR_Z = 27;    // Brandopferaltar auf der Mittellinie
-export const BASIN_Z = 29.5;  // Waschbecken zwischen Altar und Stiftshütte
+// Vorhof-Einrichtungen (Ex 40,6-7); D1 (SPEC-marc-feedback3): ALTAR_Z 27→24,
+// BASIN_Z 29,5→28 (mittig zwischen Altar und Stiftshütten-Eingang z=31,5;
+// Ex 30,18 „zwischen Offenbarungszelt und Altar" exakt erfüllt)
+export const ALTAR_Z = 24;    // Brandopferaltar auf der Mittellinie
+export const BASIN_Z = 28;    // Waschbecken zwischen Altar und Stiftshütte
 
 // Deterministischer Zufall (stabile Unebenheit/Steinanordnung über Reloads)
 function mulberry32(seed: number) {
@@ -62,8 +64,8 @@ function mulberry32(seed: number) {
 // Säulen-Reihen — Rechtecke x/z beim Platzieren abgefragt
 const STONE_EXCLUSION: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [
   { minX: -2.9, maxX: 2.9, minZ: 31.2, maxZ: 45.4 },    // Stiftshütte-Fundament
-  { minX: -1.4, maxX: 1.4, minZ: 25.7, maxZ: 28.3 },    // Brandopferaltar
-  { minX: -1.1, maxX: 1.1, minZ: 28.4, maxZ: 30.6 },    // Waschbecken
+  { minX: -1.4, maxX: 1.4, minZ: 22.7, maxZ: 25.3 },    // Brandopferaltar (D1: z=24)
+  { minX: -1.1, maxX: 1.1, minZ: 26.9, maxZ: 29.1 },    // Waschbecken (D1: z=28)
   { minX: -11.8, maxX: 11.8, minZ: -0.6, maxZ: 0.6 },   // Ostwand + Tor (Säulen)
   { minX: -11.8, maxX: 11.8, minZ: 44.7, maxZ: 45.6 },  // Westwand (Säulen)
   { minX: -11.9, maxX: -10.6, minZ: -0.5, maxZ: 45.5 }, // Süd-Reihe (Säulen)

@@ -6,6 +6,7 @@ import { Instanced, ropeTransform, type InstanceTransform, type Vec3 } from '../
 import { burlapColorTexture, burlapNormalTexture, smokeTexture } from '../utils/textures';
 import { ROPE, ACACIA_WOOD } from '../utils/materials';
 import { QUALITY_SETTINGS, detectQuality } from '../utils/quality';
+import { applyFabricWind, fabricUTime } from '../utils/wind';
 
 // Camp Israel — deutbare Zutat nach 4. Mose 2, nicht Teil der Exodus-Spezifikation.
 // SPEC C — Wuestenzelte der Bronzezeit (KEINE Pyramiden-Silhouette mehr):
@@ -206,35 +207,9 @@ const doorGeo = new THREE.PlaneGeometry(0.7, 0.95);            // Eingangs-Oeffn
 const herdGeo = new THREE.ConeGeometry(1.8, 1.1, 7);           // Herdenzelt (flach)
 
 // --- SPEC-perf-stoffe D2: Wind-Animation via onBeforeCompile ---
-// pos.y += sin(worldPos.x * 0.8 + uTime * 1.2) * 0.04 * uv.y  (oben > Saum).
-// uTime wird in useFrame aktualisiert; low-Tier: OHNE Animation. Phase pro
-// Stoff-Variante leicht versetzt; customProgramCacheKey trennt die Programme.
-const uTime = { value: 0 };
-const IS_LOW_TIER = detectQuality() === 'low';
-
-function applyWind(mat: THREE.Material, phase: number) {
-  if (IS_LOW_TIER) return;
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uTime;
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-  #ifdef USE_INSTANCING
-    vec4 windWorld = instanceMatrix * vec4(transformed, 1.0);
-  #else
-    vec4 windWorld = vec4(transformed, 1.0);
-  #endif
-  transformed.y += sin(windWorld.x * 0.8 + uTime * 1.2 + ${phase.toFixed(3)}) * 0.09 * uv.y;`
-      );
-  };
-  mat.customProgramCacheKey = () => `tent-wind-${phase}`;
-}
-
-// Zeltstoff (SPEC C + B): CC0 fabric-burlap als map (Tinting via color — die
-// Zeltfarben 0xB99A76/0x93794F/0xCFAE82 bleiben), Normal-Map nur HIGH-Tier.
-// Material-Budget: genau 3 Instanzen (Singletons).
+// pos.y += sin(worldPos.x * 0.8 + uTime * 1.2 + phase) * 0.09 * uv.y (oben > Saum).
+// Gemeinsames Pattern in utils/wind.ts (geteiltes uTime-Uniform); low-Tier:
+// OHNE Animation. Phase pro Stoff-Variante leicht versetzt.
 function makeTentMaterial(color: number, phase: number): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({
     color,
@@ -242,7 +217,7 @@ function makeTentMaterial(color: number, phase: number): THREE.MeshLambertMateri
     normalMap: burlapNormalTexture,
     side: THREE.DoubleSide,
   });
-  applyWind(mat, phase);
+  applyFabricWind(mat, 0.8, 1.2, phase, 0.09);
   return mat;
 }
 const tentMatA = makeTentMaterial(0xb99a76, 0);      // Basis
@@ -349,7 +324,7 @@ export function CampIsrael() {
   // Rauch: aufsteigend, transparent, langsam driftend (3-5 Sprites);
   // D2: uTime-Uniform fuer die Zelt-Wind-Animation
   useFrame((state) => {
-    uTime.value = state.clock.elapsedTime;
+    fabricUTime.value = state.clock.elapsedTime;
     const group = smokeGroup.current;
     if (!group) return;
     const t = state.clock.elapsedTime;
