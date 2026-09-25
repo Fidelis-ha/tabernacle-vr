@@ -186,26 +186,14 @@ function RockBatch({
 }
 
 export function TabernacleFloor() {
-  // Vorhof-Boden: 32x32 Segmente mit seeded Vertex-Displacement (SPEC B:
-  // leichte Dellen und Huegel, Amplitude 3-6 cm)
-  const courtyardGeo = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(COURTYARD_WIDTH, COURTYARD_LENGTH, 32, 32);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const rand = mulberry32(511);
-    const p1 = rand() * 10, p2 = rand() * 10, p3 = rand() * 10;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      // 2-3 ueberlagerte Sinus-Wellen (seeded) + feines Rauschen, 3-6 cm
-      const h =
-        Math.sin(x * 0.5 + p1) * Math.cos(y * 0.33 + p2) * 0.022 +
-        Math.sin((x + y) * 0.21 + p3) * 0.016 +
-        (rand() - 0.5) * 0.01;
-      pos.setZ(i, h);
-    }
-    geo.computeVertexNormals();
-    return geo;
-  }, []);
+  // Vorhof-Boden: EINE flache Plane (1 Segment — KEINE Vertex-Wellen: deren
+  // Segmentkanten-Normalen-Spruenge erzeugten das sichtbare Raster, Marc-Befund
+  // 25.09. "klares Gittermuster"). Die Boden-Unebenheit lebt jetzt vollstaendig
+  // in der Erd-Textur (Bump-Map) — einheitlicher, fugenloser Boden.
+  const courtyardGeo = useMemo(
+    () => new THREE.PlaneGeometry(COURTYARD_WIDTH, COURTYARD_LENGTH, 1, 1),
+    []
+  );
 
   return (
     <group>

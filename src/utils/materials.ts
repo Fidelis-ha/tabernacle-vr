@@ -150,7 +150,7 @@ export const EARTH = new THREE.MeshStandardMaterial({
   roughness: 0.95,
   map: earthTexture,
   bumpMap: earthTexture,
-  bumpScale: 0.02,
+  bumpScale: 0.05,
 });
 
 // Tor des Vorhofs: bunt gewirkte Decke als Textur (Ex 27,16); C2: weiche

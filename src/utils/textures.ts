@@ -219,54 +219,48 @@ function makeSand(): THREE.CanvasTexture {
 // --- Feste Erde (Vorhof-Boden) ---
 // SPEC B: Tretspuren + Wellen-Pattern + 3 Erdtoene, repeat hoch
 function makeEarth(): THREE.CanvasTexture {
-  const [c, ctx] = makeCanvas(256);
+  // 1024px, fraktal (4 Oktaven weicher Flecken), Repeat 2 — kein gerichtetes
+  // Muster, keine Zellen: Marc-Befund 25.09. "klares Gittermuster" (die alten
+  // Sinus-Baender + harte Fleckenrander wirkten bei hohem Repeat als Fugen).
+  const [c, ctx] = makeCanvas(1024);
   ctx.fillStyle = '#8B7355';
-  ctx.fillRect(0, 0, 256, 256);
-  const tones = ['rgba(160,132,98,0.26)', 'rgba(120,98,70,0.28)', 'rgba(100,80,56,0.2)'];
-  for (const tone of tones) {
-    for (let i = 0; i < 20; i++) {
-      const x = Math.random() * 256;
-      const y = Math.random() * 256;
-      const r = 26 + Math.random() * 58;
+  ctx.fillRect(0, 0, 1024, 1024);
+  // Oktave 1-4: immer feinere, immer hellere/dunklere weiche Flecken
+  const octaves = [
+    { count: 10, rMin: 180, rMax: 420, alpha: 0.16 },
+    { count: 26, rMin: 70, rMax: 180, alpha: 0.14 },
+    { count: 70, rMin: 24, rMax: 70, alpha: 0.12 },
+    { count: 200, rMin: 8, rMax: 26, alpha: 0.1 },
+  ];
+  for (const oct of octaves) {
+    for (let i = 0; i < oct.count; i++) {
+      const x = Math.random() * 1024;
+      const y = Math.random() * 1024;
+      const r = oct.rMin + Math.random() * (oct.rMax - oct.rMin);
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, tone);
+      const dark = Math.random() > 0.5;
+      g.addColorStop(0, dark ? `rgba(74,56,38,${oct.alpha})` : `rgba(168,142,106,${oct.alpha})`);
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
   }
-  // feine Koernung
-  for (let i = 0; i < 2000; i++) {
+  // Feinkoernung (Sub-Pixel-Rauschen, ungerichtet)
+  for (let i = 0; i < 9000; i++) {
     const dark = Math.random() > 0.5;
     ctx.fillStyle = dark
-      ? `rgba(78,60,40,${0.06 + Math.random() * 0.12})`
-      : `rgba(190,166,130,${0.05 + Math.random() * 0.1})`;
-    ctx.fillRect(Math.random() * 256, Math.random() * 256, 1, 1);
+      ? `rgba(78,60,40,${0.05 + Math.random() * 0.1})`
+      : `rgba(190,166,130,${0.04 + Math.random() * 0.08})`;
+    ctx.fillRect(Math.random() * 1024, Math.random() * 1024, 1, 1);
   }
-  // Tretspuren / Flecken — fein und dezent
-  for (let i = 0; i < 45; i++) {
-    ctx.fillStyle = `rgba(90,70,48,${0.04 + Math.random() * 0.05})`;
+  // Kiesel-Punkte (weich, wenige)
+  for (let i = 0; i < 260; i++) {
+    ctx.fillStyle = `rgba(92,72,50,${0.1 + Math.random() * 0.14})`;
     ctx.beginPath();
-    ctx.ellipse(
-      Math.random() * 256, Math.random() * 256,
-      4 + Math.random() * 10, 3 + Math.random() * 7,
-      Math.random() * Math.PI, 0, Math.PI * 2
-    );
+    ctx.arc(Math.random() * 1024, Math.random() * 1024, 0.8 + Math.random() * 2.4, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Wellen-Pattern: leichte Trittrillen (weiche Sinus-Baender)
-  for (let y = 6; y < 256; y += 14) {
-    ctx.strokeStyle = `rgba(96,76,52,${0.06 + Math.random() * 0.05})`;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    for (let x = 0; x <= 256; x += 8) {
-      const yy = y + Math.sin(x * 0.04 + y * 0.2) * 4;
-      if (x === 0) ctx.moveTo(x, yy);
-      else ctx.lineTo(x, yy);
-    }
-    ctx.stroke();
-  }
-  return toTexture(c, 18, 18);
+  return toTexture(c, 2, 2);
 }
 
 // --- Leinen / Byssus: feines Webmuster (B2: 2-Pixel-Raster + leichte Irritation) ---

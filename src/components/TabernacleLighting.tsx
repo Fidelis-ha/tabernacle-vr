@@ -63,12 +63,12 @@ export function TabernacleLighting() {
         castShadow
         shadow-mapSize={[shadowMapSize, shadowMapSize]}
         shadow-camera-far={110}
-        shadow-camera-left={-25}
-        shadow-camera-right={25}
-        shadow-camera-top={25}
-        shadow-camera-bottom={-25}
-        shadow-bias={-0.0002}
-        shadow-normalBias={0.02}
+        shadow-camera-left={-14}
+        shadow-camera-right={14}
+        shadow-camera-top={26}
+        shadow-camera-bottom={-26}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.1}
       />
 
       {/* Weiches Himmelsfülllicht */}

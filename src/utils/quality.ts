@@ -26,7 +26,7 @@ export const QUALITY_SETTINGS: Record<QualityTier, QualitySettings> = {
     dpr: [1, 2],
     antialias: true,
     postFX: true,
-    shadowMapSize: 1024,
+    shadowMapSize: 2048,
     courtyardSparkles: true,
     tentSparkles: true,
     altarSparkles: true,
